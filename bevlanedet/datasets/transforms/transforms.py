@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from .utils import get_camera_matrix
+from .utils import get_camera_matrix, StandardCamera
 
 from mmcv.transforms import BaseTransform
 from mmdet.registry import TRANSFORMS
@@ -37,7 +37,7 @@ class GenerateLaneTargets(BaseTransform):
             [0.,        0.,     1.  ]
         ])
         
-    def get_pv_targets(self, lane_ground, ground2cam, image_gt, lane_idx):
+    def draw_lines(self, lane_ground, ground2cam, image_gt, lane_idx):
         """
         lane_ground: homogeneous lane coordinates in ground coordinate of shape (4, M)
         ground2cam: homography matrix for ground-to-cam transformation
@@ -58,10 +58,6 @@ class GenerateLaneTargets(BaseTransform):
             thickness=  3
         )
         
-        # virtual camera
-        if self.use_virtual_cam:    # todo: implement virtual camera
-            pass
-        
         return image_gt
     
     def get_bev_targets(self):
@@ -72,7 +68,8 @@ class GenerateLaneTargets(BaseTransform):
         cam_height = results['cam_height']
         cam_pitch = results['cam_pitch']
         lanes_ground = results['laneLines']
-        image_gt = np.zeros(results['img'].shape)
+        image = results['img']
+        image_gt = np.zeros(image.shape[:2], np.uint8)
         
         ground2cam = get_camera_matrix(cam_height, cam_pitch)
         cam2ground = np.linalg.inv(ground2cam)
@@ -86,11 +83,28 @@ class GenerateLaneTargets(BaseTransform):
             lane_ground = lane_ground[lane_visibility > 0.5]
             lane_ground = np.concatenate([lane_ground, np.ones([lane_ground.shape[0], 1])], axis=1).T   # (M, 3) -> (M,4) -> (4, M)
             
-            image_gt = self.get_pv_targets(lane_ground, ground2cam, image_gt, idx)
-            # bev_gt = self.get_bev_targets()
+            image_gt = self.draw_lines(lane_ground, ground2cam, image_gt, idx)
             
+            
+        # virtual camera
+        if self.vc_config.use_virtual_cam:    # todo: implement virtual camera
+            
+            sc = StandardCamera(
+                self.vc_config.vc_height,
+                self.vc_config.vc_pitch,
+                self.vc_config.vc_im_shape,
+                image.shape[:2],
+                self.K,
+                ground2cam
+            )
+            
+            H = sc.get_H(height=0)
+            image = cv2.warpPerspective(image, H, self.vc_config.vc_im_shape)
+            image_gt = cv2.warpPerspective(image_gt, H, self.vc_config.vc_im_shape)
+        
         print(f"iamge_gt.shape: {image_gt.shape}")
         print(f"np.unique(image_gt): {np.unique(image_gt)}")
+        
         
         
         # results['image_gt'] = image_gt

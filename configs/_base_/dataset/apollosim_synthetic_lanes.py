@@ -17,9 +17,10 @@ bev_shape = (bev_x, bev_y)
 
 # virtual camera
 vc_config = dict(
-    use_virtual_camera=True,
-    vc_height=0.04325083977888603,      # same as BEVLaneDet
-    vc_pitch=1.7860000133514404
+    use_virtual_cam=True,
+    vc_height=1.7860000133514404,      # same as BEVLaneDet
+    vc_pitch=0.04325083977888603,
+    vc_im_shape=(1920, 1080)
 )
 
 train_pipeline = [
