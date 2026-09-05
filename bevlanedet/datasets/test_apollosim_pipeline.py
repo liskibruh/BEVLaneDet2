@@ -1,5 +1,6 @@
 import os
 import sys
+import numpy as np
 import traceback
 
 from mmengine.config import Config
@@ -21,7 +22,7 @@ def main():
         lazy_init=dataset_cfg['lazy_init']
     )
     
-    sample = dataset.get_data_info(0)
+    sample = dataset.get_data_info(60)   # 1
     
     pipeline_cfg = dataset_cfg['pipeline']
     
@@ -38,8 +39,12 @@ def main():
             
             if isinstance(sample, dict):
                 print(f"After {name}\n {sample.keys()}")
-                # print(f"laneLines (len({len(sample['laneLines'])})): \n\t{sample['laneLines']}")
-                # print(f"laneLines_visibility (len({len(sample['laneLines_visibility'])})): \n\t{sample['laneLines_visibility']}")
+                for key in ['img', 'img_shape', 'ori_shape', 'image_gt', 'bev_gt', 'bev_y_offset_map', 'bev_z_map']:
+                    if key in sample.keys():
+                        if not isinstance(sample[key], np.ndarray):
+                            print(f"{key}: {sample[key]}")
+                        else:
+                            print(f"{key}: {sample[key].shape}")
                 print(f"="*64)
             
             if sample is None:

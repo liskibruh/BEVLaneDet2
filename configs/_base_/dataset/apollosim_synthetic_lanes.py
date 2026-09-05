@@ -20,8 +20,22 @@ vc_config = dict(
     use_virtual_cam=True,
     vc_height=1.7860000133514404,      # same as BEVLaneDet
     vc_pitch=0.04325083977888603,
-    vc_im_shape=(1920, 1080)
+    vc_im_shape=(1920, 1080)           # todo: use consistent axes order
 )
+
+albu_train_transforms = [
+    dict(
+        type="MotionBlur",
+        p=0.2
+    ),
+    dict(
+        type="RandomBrightnessContrast"
+    ),
+    dict(
+        type="ColorJitter",
+        p=0.1
+    )
+]
 
 train_pipeline = [
     dict(type="LoadImageFromFile"),
@@ -32,10 +46,20 @@ train_pipeline = [
         meter_per_pixel=meter_per_pixel,
         vc_config=vc_config
         ),
-    # dict(type="Resize", scale=input_shape, keep_ratio=True),
-    # dict(type="RandomFlip", prob=0.5),
-    # dict(type="Pad", size_divisor=32),
-    # dict(type="PackDetInputs")
+    dict(
+        type="MultiTargetResize",
+        image_size=input_shape,
+        image_gt_size=output_2d_shape
+    ),
+    dict(
+        type="Albu",
+        transforms=albu_train_transforms,
+        keymap={
+            'img': 'image'
+        }
+        ),
+    dict(type="PackLaneData")
+    # todo: add normlization in data_preprocessor in model config
 ]
 
 val_pipeline = [
