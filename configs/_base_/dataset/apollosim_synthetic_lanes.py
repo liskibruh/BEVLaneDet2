@@ -24,17 +24,9 @@ vc_config = dict(
 )
 
 albu_train_transforms = [
-    dict(
-        type="MotionBlur",
-        p=0.2
-    ),
-    dict(
-        type="RandomBrightnessContrast"
-    ),
-    dict(
-        type="ColorJitter",
-        p=0.1
-    )
+    dict(type="MotionBlur", p=0.2),
+    dict(type="RandomBrightnessContrast"),
+    dict(type="ColorJitter", p=0.1)
 ]
 
 train_pipeline = [
@@ -50,13 +42,11 @@ train_pipeline = [
         type="MultiTargetResize",
         image_size=input_shape,
         image_gt_size=output_2d_shape
-    ),
+        ),
     dict(
         type="Albu",
         transforms=albu_train_transforms,
-        keymap={
-            'img': 'image'
-        }
+        keymap={'img': 'image'}
         ),
     dict(type="PackLaneData")
     # todo: add normlization in data_preprocessor in model config

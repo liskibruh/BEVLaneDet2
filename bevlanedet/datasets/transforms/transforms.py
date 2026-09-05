@@ -11,15 +11,6 @@ from mmdet.registry import TRANSFORMS
 from mmengine.structures import BaseDataElement, PixelData
 
 @TRANSFORMS.register_module()
-class LoadLanes(BaseTransform):
-    def __init__(self,
-                ):
-        pass
-    
-    def transform(self, results):
-        return results
-
-@TRANSFORMS.register_module()
 class GenerateLaneTargets(BaseTransform):
     def __init__(self,
                 x_range,
@@ -107,7 +98,7 @@ class GenerateLaneTargets(BaseTransform):
             
             # sort points and remove dups
             x, y, z = dedup_and_sort_x(x_, y_, z_)
-            # x, y, z = dedup_and_desc_sort_x_old(x_, y_, z_)
+            # x, y, z = dedup_and_sort_x_old(x_, y_, z_)
             
             if len(x) <= 1:
                 continue
@@ -276,8 +267,6 @@ class GenerateLaneTargets(BaseTransform):
         
         # save_gt_vis(gt=debug_gt, fname=fname, out_dir="./")
         
-        # outs = [image, image_gt, bev_gt, y_offset_map, z_map, ground2cam, self.K]
-        
         results['image_gt'] = image_gt
         results['bev_gt'] = bev_gt
         results['bev_gt_shape'] = bev_gt.shape
@@ -340,17 +329,14 @@ class MultiTargetResize(BaseTransform):
 @TRANSFORMS.register_module()
 class PackLaneData(BaseTransform):
     """
-    Pack inputs for the lane detection model.
+    Pack inputs for the model.
     
     Returns a dict:
     - 'inputs': image as a (C, H, W) tensor
     - 'data_samples': a BaseDataElement with:
         - image_gt  (PixelData): front-view segmentation target (image_gt)
-        - bev_gt    (PixelData): BEV targets sharing the (200, 48) grid
-                                (bev_gt, bev_y_offset_map, bev_z_map)
-        - metainfo: meta_keys, plus camera params (K, ground2cam),
-                    since those are small per-sample arrays, not
-                    per-pixel maps
+        - bev_gt    (PixelData): BEV targets (bev_gt, bev_y_offset_map, bev_z_map)
+        - metainfo: meta_keys, plus camera params (K, ground2cam)
     """
     
     default_meta_keys = [

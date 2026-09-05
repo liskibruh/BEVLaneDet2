@@ -64,13 +64,14 @@ def dedup_and_sort_x_old(x, y, z):
     
     for idx in range(len(order)):
         if idx != 0 and x[order[idx]] <= x[order[idx-1]]:
+        # if idx != 0 and x[order[idx]] == x[order[idx-1]]:
             continue
         else:
             x_.append(x[order[idx]])
             y_.append(y[order[idx]])
             z_.append(z[order[idx]])
     
-    return x_, y_, z_
+    return np.array(x_), np.array(y_), np.array(z_)
 
 def calculate_dist(
     center,
@@ -217,7 +218,7 @@ def save_gt_vis(gt, fname, out_dir="./"):
         bev_image = gt['ipm_image'].copy()
         y_offset_map = gt['ipm_y_offset_map'].copy()
         sparse_xy_lanes = gt['ipm_sparse_xy_lanes'].copy()
-        dense_xy_lanes = gt['ipm_dense_xy_lanes'].copy()
+        # dense_xy_lanes = gt['ipm_dense_xy_lanes'].copy()
         
         for idx in sparse_xy_lanes:
             visualize_offsets_arrows(idx, bev_image, y_offset_map)
