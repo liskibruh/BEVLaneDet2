@@ -3,12 +3,18 @@ import sys
 import numpy as np
 import traceback
 
+import torch
+
 from mmengine.config import Config
-from mmdet.registry import TRANSFORMS
+from mmdet.registry import TRANSFORMS, MODELS
+from mmdet.utils import register_all_modules
+
 from bevlanedet.datasets.apollosim_lanes import ApolloSimDataset
 from bevlanedet.datasets.transforms import GenerateLaneTargets
 
-CONFIG_PTH = "/data24t_1/owais.tahir/Research/BEVLaneDet2/configs/_base_/dataset/apollosim_synthetic_lanes.py"
+register_all_modules()
+
+CONFIG_PTH = "/data24t_1/owais.tahir/Research/BEVLaneDet2/configs/bevlanedet/bevlanedet_r34_base.py"
 
 def main():
     cfg = Config.fromfile(CONFIG_PTH)
@@ -21,6 +27,11 @@ def main():
         pipeline=dataset_cfg['pipeline'],
         lazy_init=dataset_cfg['lazy_init']
     )
+    
+    model_cfg = cfg.model
+    
+    model = MODELS.build(model_cfg)
+    model.train()
     
     sample = dataset.get_data_info(60)   # 1
     
@@ -56,6 +67,17 @@ def main():
             
             break
     
+    data = dict(        
+        inputs = sample['inputs'].unsqueeze(0),
+        data_samples = [sample['data_sample']]
+    )
+    
+    data = model.data_preprocessor(data)
+    
+    outs = model(**data)
+    
+    for out in outs:
+        print(f"out.shape: {out.shape}")
 
 if __name__ == "__main__":
     main()

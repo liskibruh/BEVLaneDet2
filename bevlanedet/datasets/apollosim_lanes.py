@@ -156,7 +156,7 @@ class ApolloSimDataset(Dataset):
             raise ValueError("data cannot be None, check data pipeline.")
         
         return data
-    
+
 if __name__ == "__main__":
     dataset = ApolloSimDataset(
         data_root= "/data24t_1/owais.tahir/Research/BEVLaneDet2/data/Apollo_Sim_3D_Lane_Release",
