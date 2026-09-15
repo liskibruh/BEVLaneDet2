@@ -74,10 +74,11 @@ def main():
     
     data = model.data_preprocessor(data)
     
-    outs = model(**data)
+    outs = model._forward(**data)
     
-    for out in outs:
-        print(f"out.shape: {out.shape}")
+    outs_map = {0: 'ms', 1: 'me'}
+    for i, out in enumerate(outs):
+        print(f"fv_{outs_map[i]}.shape: {out.shape}")
 
 if __name__ == "__main__":
     main()
