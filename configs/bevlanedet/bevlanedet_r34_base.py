@@ -6,5 +6,21 @@ with read_base():
     from .._base_.schedulers.schedule_2x import *
     from .._base_.default_runtime import *
 
+default_scope = 'mmdet'
+
+custom_imports = dict(
+    imports=[
+        'bevlanedet',
+    ],
+    allow_failed_imports=False
+)
 
 work_dir = './work_dirs/bevlandet_base'
+
+val_cfg = None
+val_evaluator = None
+val_dataloader = None
+
+test_cfg = None
+test_evaluator = None
+test_dataloader = None

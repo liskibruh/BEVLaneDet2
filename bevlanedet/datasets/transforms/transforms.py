@@ -392,10 +392,11 @@ class PackLaneData(BaseTransform):
                 if key in ('K', 'ground2cam'):
                     mat = to_tensor(results[key].copy())
                     meta[key] = mat
-                meta[key] = results[key]
+                else:
+                    meta[key] = results[key]
         
         data_sample.set_metainfo(meta)
         
-        packed_results['data_sample'] = data_sample
+        packed_results['data_samples'] = data_sample
         
         return packed_results

@@ -7,7 +7,7 @@ model = dict(
     type="BEVLaneDet",
     # init_cfg=dict(type='Pretrained', checkpoint='path/to/bevlanedet_checkpoint.pth'),
     init_cfg=[
-        dict(type='Kaiming', layer=['Conv2d', 'Linear'], mode='fan_out', linearity='relu'),     # this also applies to FCTransform_ (the orig impl. does not apply it to this module)
+        dict(type='Kaiming', layer=['Conv2d', 'Linear'], mode='fan_out', nonlinearity='relu'),     # this also applies to FCTransform_ (the orig impl. does not apply it to this module)
         dict(type='Constant', layer=['_BatchNorm', 'GroupNorm'], val=1, bias=0),
     ],
     data_preprocessor=dict(
@@ -38,13 +38,23 @@ model = dict(
         space_featmap_size=(256, 25, 5),
         init_cfg=None
     ),
-    lane_head=dict(
+    fv_lane_head=dict(
         type="FVLaneHead",
         output_size=output_2d_shape,
         input_channels=512,
         embed_net_cfg=dict(
             type="InstanceEmbedding",
             ci=32,
+            co=2
+        )
+    ),
+    bev_lane_head=dict(
+        type="BEVLaneHead",
+        output_size=bev_shape,
+        input_channels=512,
+        embed_net_cfg=dict(
+            type="InstanceEmbeddingWithOffset",
+            ci=64,
             co=2
         )
     ),

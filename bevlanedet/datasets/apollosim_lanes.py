@@ -89,7 +89,7 @@ class Compose:
         format_string += '\n)'
         return format_string
 
-# @DATASETS.register_module()
+@DATASETS.register_module()
 class ApolloSimDataset(Dataset):
     def __init__(self,
                 data_root, 

@@ -205,7 +205,6 @@ class FVLaneHead(BaseDenseHead):
     def loss(self, fv_x):
         fv_out = self.forward(fv_x)
         losses = self.loss_by_feat(nothing=0)
-        
         # return losses
         return fv_out
     
@@ -216,16 +215,241 @@ class FVLaneHead(BaseDenseHead):
 
 @MODELS.register_module()
 class InstanceEmbeddingWithOffset(BaseModule):
-    def __init__(self, ):
-        super().__init__()
-    
+    def __init__(self, ci, co=1, init_cfg=None):
+        super().__init__(init_cfg=init_cfg)
+        
+        self.neck = Sequential(
+            ConvModule(
+                in_channels=ci, 
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=128, 
+                out_channels=ci,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            )
+        )
+        
+        self.ms = Sequential(
+            ConvModule(
+                in_channels=ci, 
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=128, 
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            build_conv_layer(
+                dict(type='Conv2d'),
+                in_channels=64,
+                out_channels=1,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            )
+        )
+        
+        self.moff  = Sequential(
+            ConvModule(
+                in_channels=ci, 
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=128, 
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            build_conv_layer(
+                dict(type='Conv2d'),
+                in_channels=64,
+                out_channels=1,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            )
+        )
+        
+        self.mz  = Sequential(
+            ConvModule(
+                in_channels=ci, 
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=128, 
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            build_conv_layer(
+                dict(type='Conv2d'),
+                in_channels=64,
+                out_channels=1,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            )
+        )
+        
+        self.me  = Sequential(
+            ConvModule(
+                in_channels=ci, 
+                out_channels=128,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=128, 
+                out_channels=64,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            build_conv_layer(
+                dict(type='Conv2d'),
+                in_channels=64,
+                out_channels=co,
+                kernel_size=3,
+                stride=1,
+                padding=1
+            )
+        )   
+        
     def forward(self, x):
-        pass
+        feat = self.neck(x)
+        return self.ms(feat), self.me(feat), self.moff(feat), self.mz(feat)
 
 @MODELS.register_module()
 class BEVLaneHead(BaseDenseHead):
-    def __init__(self, init_cfg=None):
+    def __init__(self, output_size, embed_net_cfg, input_channels=256, init_cfg=None):
         super().__init__(init_cfg=init_cfg)
+        
+        self.bev_up = Sequential(
+            build_upsample_layer(dict(type='bilinear', scale_factor=2)),
+            Residual(
+                module=Sequential(
+                    ConvModule(
+                        in_channels=input_channels,
+                        out_channels=64,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=dict(type='ReLU')
+                    ),
+                    Dropout(drop_prob=0.2, inplace=False),
+                    ConvModule(
+                        in_channels=64,
+                        out_channels=128,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=None
+                    )
+                ),
+                downsample=build_conv_layer(
+                    dict(type='Conv2d'),
+                    in_channels=input_channels,
+                    out_channels=128,
+                    kernel_size=1
+                )
+            ),
+            build_upsample_layer(dict(type='bilinear', size=output_size, align_corners=False)),
+            Residual(
+                module=Sequential(
+                    ConvModule(
+                        in_channels=128,
+                        out_channels=64,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=dict(type='ReLU')
+                    ),
+                    Dropout(drop_prob=0.2, inplace=False),
+                    ConvModule(
+                        in_channels=64,
+                        out_channels=64,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=None
+                    )
+                ),
+                downsample=build_conv_layer(
+                    dict(type='Conv2d'),
+                    in_channels=128,
+                    out_channels=64,
+                    kernel_size=1
+                )
+            )
+        )
+        
+        self.head = MODELS.build(embed_net_cfg)
     
-    def forward(sef, bev_x):
+    def forward(self, bev_x):
+        bev_feat = self.bev_up(bev_x)
+        return self.head(bev_feat)
+    
+    def loss(self, bev_x):
+        bev_out = self.forward(bev_x)
+        losses = self.loss_by_feat(nothing=0)
+        # return losses
+        return bev_out
+    
+    def loss_by_feat(self, **kwargs) -> dict:
+        """Calculate the loss based on the features extracted by the detection
+        head."""
         pass

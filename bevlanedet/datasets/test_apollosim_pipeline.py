@@ -14,7 +14,7 @@ from bevlanedet.datasets.transforms import GenerateLaneTargets
 
 register_all_modules()
 
-CONFIG_PTH = "/data24t_1/owais.tahir/Research/BEVLaneDet2/configs/bevlanedet/bevlanedet_r34_base.py"
+CONFIG_PTH = "/data8t_1/owais_tahir/BEVLaneDet2/configs/bevlanedet/bevlanedet_r34_base.py"
 
 def main():
     cfg = Config.fromfile(CONFIG_PTH)
@@ -69,16 +69,24 @@ def main():
     
     data = dict(        
         inputs = sample['inputs'].unsqueeze(0),
-        data_samples = [sample['data_sample']]
+        data_samples = [sample['data_samples']]
     )
     
     data = model.data_preprocessor(data)
     
-    outs = model._forward(**data)
+    fv_out, bev_out = model._forward(**data)
     
-    outs_map = {0: 'ms', 1: 'me'}
-    for i, out in enumerate(outs):
-        print(f"fv_{outs_map[i]}.shape: {out.shape}")
+    fv_outs_map = {0: 'ms', 1: 'me'}
+    bev_outs_map = {0: 'ms', 1: 'me', 2: 'moff', 3: 'mz'}
+    
+    print("="*64)
+    for i, out in enumerate(fv_out):
+        print(f"fv_{fv_outs_map[i]}.shape: {out.shape}, device: {out.device}")
+    print("="*64)
+    for i, out in enumerate(bev_out):
+        print(f"bev_{bev_outs_map[i]}.shape: {out.shape}, device: {out.device}")
+    print("="*64)
+    print("="*64)
 
 if __name__ == "__main__":
     main()

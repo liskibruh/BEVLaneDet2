@@ -7,7 +7,7 @@ data_root = "./data/Apollo_Sim_3D_Lane_Release/"
 train_ann_path = "data_splits/standard/train.json"
 val_ann_path = "data_splits/standard/val.json"
 
-dataset = "ApolloDataset"
+dataset = "ApolloSimDataset"
 
 # virtual camera
 vc_config = dict(
@@ -66,15 +66,15 @@ train_dataloader = dict(
     )
 )
 
-val_dataloader = dict(
-    batch_size=4,
-    num_workers=8,
-    shuffle=True,
-    dataset=dict(
-        type=dataset,
-        data_root=data_root,
-        ann_file=val_ann_path,
-        pipeline=val_pipeline,
-        lazy_init=False # todo: dummy for now
-    )
-)
+# val_dataloader = dict(
+#     batch_size=4,
+#     num_workers=8,
+#     shuffle=True,
+#     dataset=dict(
+#         type=dataset,
+#         data_root=data_root,
+#         ann_file=val_ann_path,
+#         pipeline=val_pipeline,
+#         lazy_init=False # todo: dummy for now
+#     )
+# )
