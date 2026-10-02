@@ -4,4 +4,4 @@ __pycache__/
 *.pyd
 
 /data
-/work_dirs.*
+/work_dirs*

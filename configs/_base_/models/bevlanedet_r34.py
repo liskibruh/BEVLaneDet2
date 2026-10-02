@@ -12,7 +12,7 @@ model = dict(
     ],
     data_preprocessor=dict(
         type='DetDataPreprocessor',
-        mean=[123.675, 116.288, 103.53],     # replace by 'mean' and 'std' of Apollo Lanes
+        mean=[123.675, 116.288, 103.53],     # replace by 'mean' and 'std' of ApolloLanes
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=False,
         pad_size_divisor=1
@@ -80,6 +80,45 @@ model = dict(
     #         )
     #     )
     # ),
+    loss_seg=dict(
+        type='SegLoss',
+        bce_loss=dict(
+            type='CrossEntropyLoss',
+            use_sigmoid=True,
+            class_weight=[10.0],
+            loss_weight=1.0
+        ),
+        iou_loss=dict(
+            type='SoftIOULoss',
+            ignore_index=255,
+            eps=1e-6
+        )
+    ),
+    loss_embed=dict(
+        type='NDPushPullLoss',
+        var_weight=1.0,
+        dist_weight=1.0,
+        margin_var=1.0,
+        margin_dist=5.0,
+        ignore_label=200
+    ),
+    loss_offset=dict(
+        type='CrossEntropyLoss',
+        use_sigmoid=False,
+        loss_weight=1.0
+    ),
+    loss_z=dict(
+        type='MSELoss',
+        reduction='mean',
+        loss_weight=1.0
+    ),
+    # loss weights
+    bev_loss_seg_weight=3,
+    bev_loss_embed_weight=0.5,
+    bev_loss_offset_weight=60,
+    bev_loss_z_weight=30,
+    fv_loss_seg_weight=3,
+    fv_loss_embed_weight=0.5,
     bb_out_ch=512,      # depends on backbone's (resenet) "out_indices" parameter
                         # [64, 128, 256, 512] for out_indices (0, 1, 2, 3)
 )

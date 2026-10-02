@@ -267,11 +267,26 @@ class GenerateLaneTargets(BaseTransform):
         
         # save_gt_vis(gt=debug_gt, fname=fname, out_dir="./")
         
-        results['image_gt'] = image_gt
-        results['bev_gt'] = bev_gt
-        results['bev_gt_shape'] = bev_gt.shape
+        image_gt_instance = image_gt.copy()
+        image_gt_segment = image_gt.copy()
+        image_gt_segment[image_gt_segment > 0] = 1
+        
+        bev_gt_instance = bev_gt.copy()
+        bev_gt_segment = bev_gt.copy()
+        bev_gt_segment[bev_gt_segment > 0] = 1
+        
+        # results['image_gt'] = image_gt
+        # results['bev_gt'] = bev_gt
+        
+        results['image_gt_segment'] = image_gt_segment
+        results['image_gt_instance'] = image_gt_instance
+        
+        results['bev_gt_segment'] = bev_gt_segment
+        results['bev_gt_instance'] = bev_gt_instance
         results['bev_y_offset_map'] = y_offset_map
         results['bev_z_map'] = z_map
+        
+        results['bev_gt_shape'] = bev_gt.shape
         results['ground2cam'] = ground2cam
         results['K'] = self.K
         
@@ -289,7 +304,7 @@ class MultiTargetResize(BaseTransform):
     def transform(self, results):
         
         assert results['img'] is not None
-        assert results['image_gt'] is not None
+        assert results['image_gt_segment'] is not None
         
         ori_im_h = results['img'].shape[0]
         ori_im_w = results['img'].shape[1]
@@ -303,9 +318,16 @@ class MultiTargetResize(BaseTransform):
         
         results['img_shape'] = (self.im_h, self.im_w)   # update 'image_shape' to the resized shape
         
-        image_gt = results['image_gt']
-        results['image_gt'] = cv2.resize(
-            image_gt,
+        image_gt_segment = results['image_gt_segment']
+        results['image_gt_segment'] = cv2.resize(
+            image_gt_segment,
+            (self.im_gt_w, self.im_gt_h),
+            interpolation=cv2.INTER_NEAREST
+        )
+        
+        image_gt_instance = results['image_gt_instance']
+        results['image_gt_instance'] = cv2.resize(
+            image_gt_instance,
             (self.im_gt_w, self.im_gt_h),
             interpolation=cv2.INTER_NEAREST
         )
@@ -366,17 +388,25 @@ class PackLaneData(BaseTransform):
         data_sample = BaseDataElement()
         
         # FV target
-        if 'image_gt' in results:
-            image_gt = PixelData(
-                sem_seg=to_tensor(results['image_gt'][None, ...].copy())
+        if 'image_gt_segment' in results:
+            image_gt_segment = PixelData(
+                sem_seg=to_tensor(results['image_gt_segment'][None, ...].copy())
+            )
+        if 'image_gt_instance' in results:
+            image_gt_instance = PixelData(
+                instance_seg=to_tensor(results['image_gt_instance'][None, ...].copy())
             )
         
-        data_sample.image_gt = image_gt
+        
+        data_sample.image_gt_segment = image_gt_segment
+        data_sample.image_gt_instance = image_gt_instance
         
         # BEV targets
         bev_fields = {}
-        if 'bev_gt' in results:
-            bev_fields['sem_seg'] = to_tensor(results['bev_gt'][None, ...].copy())
+        if 'bev_gt_segment' in results:
+            bev_fields['sem_seg'] = to_tensor(results['bev_gt_segment'][None, ...].copy())
+        if 'bev_gt_instance' in results:
+            bev_fields['instance_seg'] = to_tensor(results['bev_gt_instance'][None, ...].copy())
         if 'bev_y_offset_map' in results:
             bev_fields['y_offset_map'] = to_tensor(results['bev_y_offset_map'][None, ...].copy())
         if 'bev_z_map' in results:
