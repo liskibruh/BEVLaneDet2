@@ -5,7 +5,7 @@ with read_base():
 
 data_root = "./data/Apollo_Sim_3D_Lane_Release/"
 train_ann_path = "data_splits/standard/train.json"
-val_ann_path = "data_splits/standard/val.json"
+val_ann_path = "data_splits/standard/test.json"
 
 dataset = "ApolloSimDataset"
 
@@ -48,7 +48,15 @@ train_pipeline = [
 
 val_pipeline = [
     dict(type="LoadImageFromFile"),
-    # dict(type="Resize", scale=input_shape, keep_ratio=True),
+    dict(
+        type="GenerateLaneTargets",     # todo: this warps the image in vc and also generates gts, the gts part is not required for evaluation
+        x_range=x_range,
+        y_range=y_range,
+        meter_per_pixel=meter_per_pixel,
+        vc_config=vc_config
+        ),
+    dict(type="Resize", scale=(input_shape[1], input_shape[0]), keep_ratio=True),
+    dict(type="PackLaneData")
     # dict(type="RandomFlip", prob=0.5),
     
 ]
@@ -66,15 +74,24 @@ train_dataloader = dict(
     )
 )
 
-# val_dataloader = dict(
-#     batch_size=4,
-#     num_workers=8,
-#     shuffle=True,
-#     dataset=dict(
-#         type=dataset,
-#         data_root=data_root,
-#         ann_file=val_ann_path,
-#         pipeline=val_pipeline,
-#         lazy_init=False # todo: dummy for now
-#     )
-# )
+val_dataloader = dict(
+    batch_size=4,
+    num_workers=8,
+    shuffle=True,
+    dataset=dict(
+        type=dataset,
+        data_root=data_root,
+        ann_file=val_ann_path,
+        pipeline=val_pipeline,
+        lazy_init=False # todo: dummy for now
+    )
+)
+
+val_evaluator = dict(
+    type="DummyEval",
+    post_conf=0.9,
+    post_emb_margin=6.0,
+    post_min_cluster_size=15,
+    x_range=x_range,
+    meter_per_pixel=meter_per_pixel,
+)

@@ -17,10 +17,10 @@ custom_imports = dict(
 
 work_dir = './work_dirs/bevlandet_base'
 
-val_cfg = None
-val_evaluator = None
-val_dataloader = None
+# val_cfg = None
+# val_evaluator = None
+# val_dataloader = None
 
-test_cfg = None
-test_evaluator = None
-test_dataloader = None
+# test_cfg = None
+test_evaluator = val_evaluator
+test_dataloader = val_dataloader

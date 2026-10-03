@@ -204,7 +204,7 @@ class FVLaneHead(BaseDenseHead):
     
     def loss(self, fv_x):
         fv_out = self.forward(fv_x)
-        losses = self.loss_by_feat(nothing=0)
+        # losses = self.loss_by_feat(nothing=0)
         # return losses
         return fv_out
     
@@ -445,7 +445,7 @@ class BEVLaneHead(BaseDenseHead):
     
     def loss(self, bev_x):
         bev_out = self.forward(bev_x)
-        losses = self.loss_by_feat(nothing=0)
+        # losses = self.loss_by_feat(nothing=0)
         # return losses
         return bev_out
     

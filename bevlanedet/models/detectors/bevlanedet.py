@@ -2,6 +2,8 @@ import logging
 import torch
 from torch import nn
 from ..utils.common_modules import Residual
+# from ...utils.cluster import embedding_post
+# from ...evaluation.utils.post_process_utils import bev_instance2points_with_offset_z
 
 from mmengine.model import kaiming_init, constant_init, Sequential
 from mmengine.logging import print_log
@@ -22,12 +24,12 @@ class BEVLaneDet(BaseDetector):
                 loss_embed,
                 loss_offset,
                 loss_z,
-                bev_loss_seg_weight,
-                bev_loss_embed_weight,
-                bev_loss_offset_weight,
-                bev_loss_z_weight,
-                fv_loss_seg_weight,
-                fv_loss_embed_weight,
+                bev_loss_seg_weight=3,
+                bev_loss_embed_weight=0.5,
+                bev_loss_offset_weight=60,
+                bev_loss_z_weight=30,
+                fv_loss_seg_weight=3,
+                fv_loss_embed_weight=0.5,
                 bb_out_ch=512,
                 init_cfg=None):
         
@@ -153,9 +155,35 @@ class BEVLaneDet(BaseDetector):
         
         return losses
     
-    def predict(self, inputs):
+    def predict(self, inputs, data_samples):
+        
         bev_out = self._forward(inputs)
         
-        pred, _, _, _ = bev_out
+        pred_seg      = bev_out[0].detach().cpu()
+        pred_emb      = bev_out[1].detach().cpu()
+        pred_offset_y = torch.sigmoid(bev_out[2]).detach().cpu()
+        pred_z        = bev_out[3].detach().cpu()
         
-        return pred
+        
+        for idx, sample in enumerate(data_samples):
+            sample.bev_pred = {
+                'pred_seg': pred_seg[idx].unsqueeze(0),
+                'pred_emb': pred_emb[idx].unsqueeze(0),
+                'pred_offset_y': pred_offset_y[idx].unsqueeze(0),
+                'pred_z': pred_z[idx].unsqueeze(0)
+            }
+            
+        return data_samples
+        
+        # pred_seg, emb, offset_y, z = bev_out
+        
+        
+        
+        # pred = (pred_seg, emb)
+        # offset_y = offset_y[0][0]
+        # z = z[0][0]
+        
+        # canvas, ids = embedding_post(pred, self.post_conf, emb_margin=self.post_emb_margin, min_cluster_size=self.post_min_cluster_size, canvas_color=False)
+        # lines = bev_instance2points_with_offset_z(canvas, max_x=self.x_range[1], ms_per_pixel=(self.meter_per_pixel, self.meter_per_pixel), offset_y=offset_y, Z=z)
+        
+        # return 0.0

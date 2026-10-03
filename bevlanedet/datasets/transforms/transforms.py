@@ -186,6 +186,7 @@ class GenerateLaneTargets(BaseTransform):
             self.meter_per_pixel
         )
         
+        gt_lanes = []
         ipm_lanes = {}
         for idx in range(len(lanes_ground)):
             lane_visibility = np.array(results['laneLines_visibility'][idx])
@@ -194,6 +195,8 @@ class GenerateLaneTargets(BaseTransform):
             assert lane_ground.shape[0] == lane_visibility.shape[0]
             
             lane_ground = lane_ground[lane_visibility > 0.5]
+            
+            gt_lanes.append(lane_ground.tolist())
             
             # (M, 3) -> (M,4) -> (4, M)
             lane_ground = np.concatenate([
@@ -278,6 +281,9 @@ class GenerateLaneTargets(BaseTransform):
         # results['image_gt'] = image_gt
         # results['bev_gt'] = bev_gt
         
+        results['gt_lanes'] = gt_lanes
+        
+        results['img'] = image        
         results['image_gt_segment'] = image_gt_segment
         results['image_gt_instance'] = image_gt_instance
         
@@ -364,7 +370,7 @@ class PackLaneData(BaseTransform):
     default_meta_keys = [
         'raw_file', 'cam_height', 'cam_pitch', 'sample_idx',
         'img_path', 'ori_shape', 'img_shape', 'image_gt_shape',
-        'bev_gt_shape', 'ground2cam', 'K' 
+        'bev_gt_shape', 'ground2cam', 'K', 'gt_lanes' 
     ]
     
     def __init__(self, meta_keys=default_meta_keys):
