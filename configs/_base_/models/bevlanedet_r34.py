@@ -12,7 +12,9 @@ model = dict(
     ],
     data_preprocessor=dict(
         type='DetDataPreprocessor',
-        mean=[123.675, 116.288, 103.53],     # replace by 'mean' and 'std' of ApolloLanes
+        # mean=[124.67  138.17 145.12]      # mean and std computed for Apollo
+        # std=[56.87 58.62 62.50]
+        mean=[123.675, 116.288, 103.53],    # mean and std of ImageNet
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=False,
         pad_size_divisor=1
