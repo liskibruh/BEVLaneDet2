@@ -58,10 +58,10 @@ def bev_instance2points_with_offset_z(ids: np.ndarray, max_x=50, ms_per_pixel=(0
         y = np.array(y)[::-1]
         z = np.array(z)[::-1]
 
-        x = max_x / meter_per_pixal[0] - x
-        y = y * meter_per_pixal[1]
-        y -= center * meter_per_pixal[1]
-        x = x * meter_per_pixal[0]
+        x = max_x / ms_per_pixel[0] - x
+        y = y * ms_per_pixel[1]
+        y -= center * ms_per_pixel[1]
+        x = x * ms_per_pixel[0]
 
         y *= -1.0  # Vector is from right to left
         if len(x) < 2:

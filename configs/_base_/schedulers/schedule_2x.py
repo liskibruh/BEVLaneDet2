@@ -5,29 +5,24 @@ from mmengine.runner.loops import EpochBasedTrainLoop, TestLoop, ValLoop
 from torch.optim.sgd import SGD
 
 # training schedule for 1x
-train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=50, val_interval=999)
+train_cfg = dict(type=EpochBasedTrainLoop, max_epochs=50, val_interval=10)
 val_cfg = dict(type=ValLoop)
 test_cfg = dict(type=TestLoop)
 
-# learning rate
+train_bs = 4        # must match train_dataloader batch_size (single GPU, so no multiplier)
+orig_bs = 8         # <- original implementation's batch size
+base_lr = 1e-3 * train_bs / orig_bs   # 5e-4 with these values
+
+optim_wrapper = dict(
+    type='OptimWrapper',
+    optimizer=dict(type='AdamW', lr=base_lr, betas=(0.9, 0.999),
+                   eps=1e-8, weight_decay=1e-2, amsgrad=False))
+
 param_scheduler = [
-    dict(type=LinearLR, start_factor=0.001, by_epoch=False, begin=0, end=500),
-    dict(
-        type=MultiStepLR,
-        begin=0,
-        end=24,
-        by_epoch=True,
-        milestones=[16, 22],
-        gamma=0.1)
+    # short warmup; drop it for a strict reproduction
+    dict(type='LinearLR', start_factor=0.001, by_epoch=False, begin=0, end=500),
+    dict(type='CosineAnnealingLR', T_max=50, eta_min=0,
+         begin=0, end=50, by_epoch=True),
 ]
 
-# optimizer
-optim_wrapper = dict(
-    type=OptimWrapper,
-    optimizer=dict(type=SGD, lr=0.02, momentum=0.9, weight_decay=0.0001))
-
-# Default setting for scaling LR automatically
-#   - `enable` means enable scaling LR automatically
-#       or not by default.
-#   - `base_batch_size` = (8 GPUs) x (2 samples per GPU).
-auto_scale_lr = dict(enable=False, base_batch_size=16)
+auto_scale_lr = dict(enable=False, base_batch_size=orig_bs)

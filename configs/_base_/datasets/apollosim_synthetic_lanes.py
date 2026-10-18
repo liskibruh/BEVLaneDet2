@@ -63,7 +63,7 @@ val_pipeline = [
 
 train_dataloader = dict(
     batch_size=4,
-    num_workers=8,
+    num_workers=2,
     shuffle=True,
     dataset=dict(
         type=dataset,
@@ -76,7 +76,7 @@ train_dataloader = dict(
 
 val_dataloader = dict(
     batch_size=4,
-    num_workers=8,
+    num_workers=2,
     shuffle=True,
     dataset=dict(
         type=dataset,
@@ -88,7 +88,7 @@ val_dataloader = dict(
 )
 
 val_evaluator = dict(
-    type="DummyEval",
+    type="LaneEval",
     post_conf=0.9,
     post_emb_margin=6.0,
     post_min_cluster_size=15,

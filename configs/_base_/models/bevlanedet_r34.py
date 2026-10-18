@@ -106,7 +106,7 @@ model = dict(
     ),
     loss_offset=dict(
         type='CrossEntropyLoss',
-        use_sigmoid=False,
+        use_sigmoid=True,
         loss_weight=1.0
     ),
     loss_z=dict(

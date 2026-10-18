@@ -16,7 +16,7 @@ from mmdet.registry import METRICS
 
 
 @METRICS.register_module()
-class DummyEval(BaseMetric):
+class LaneEval(BaseMetric):
     def __init__(self,
                 post_conf=0.9,
                 post_emb_margin=6.0,
@@ -53,9 +53,9 @@ class DummyEval(BaseMetric):
     
     def process(self, data_batch, data_samples):
         for sample in data_samples:
-            pred = (sample['bev_pred']['pred_seg'], sample['bev_pred']['pred_emb'])
-            pred_offset_y = sample['bev_pred']['pred_offset_y'][0][0]
-            pred_z = sample['bev_pred']['pred_z'][0][0]
+            pred = (sample['bev_pred']['pred_seg'].detach().cpu().numpy(), sample['bev_pred']['pred_emb'].detach().cpu().numpy())
+            pred_offset_y = sample['bev_pred']['pred_offset_y'][0][0].detach().cpu().numpy()
+            pred_z = sample['bev_pred']['pred_z'][0][0].detach().cpu().numpy()
             
             canvas, ids = embedding_post(pred, 
                                          self.post_conf, 

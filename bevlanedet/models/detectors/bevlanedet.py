@@ -71,7 +71,7 @@ class BEVLaneDet(BaseDetector):
         self.loss_bce_logits = MODELS.build(loss_seg.bce_loss)
         self.loss_soft_iou = MODELS.build(loss_seg.iou_loss)
         self.loss_push_pull = MODELS.build(loss_embed)
-        self.loss_bce = MODELS.build(loss_offset)
+        self.loss_bce_logits_offset = MODELS.build(loss_offset)
         self.loss_mse = MODELS.build(loss_z)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
@@ -126,7 +126,7 @@ class BEVLaneDet(BaseDetector):
         
         loss_seg = self.loss_bce_logits(pred, bev_seg_gt) + self.loss_soft_iou(torch.sigmoid(pred), bev_seg_gt)
         loss_emb = self.loss_push_pull(emb, bev_instance_gt)
-        loss_offset = self.loss_bce(bev_seg_gt * torch.sigmoid(offset_y), bev_offset_gt).unsqueeze(0)
+        loss_offset = self.loss_bce_logits_offset(offset_y.squeeze(1), bev_offset_gt.squeeze(1), weight=bev_seg_gt.squeeze(1)).unsqueeze(0)
         loss_z = self.loss_mse(bev_seg_gt * z, bev_z_gt).unsqueeze(0)
         loss_total = self.bev_loss_seg_weight * loss_seg + self.bev_loss_embed_weight * loss_emb
         loss_total = loss_total.unsqueeze(0)
@@ -143,7 +143,7 @@ class BEVLaneDet(BaseDetector):
             for sample in data_samples
         ])
         
-        loss_seg_2d = self.loss_bce_logits(pred_2d, fv_seg_gt) + self.loss_soft_iou(torch.sigmoid(pred_2d), fv_instance_gt)
+        loss_seg_2d = self.loss_bce_logits(pred_2d, fv_seg_gt) + self.loss_soft_iou(torch.sigmoid(pred_2d), fv_seg_gt)
         loss_emb_2d = self.loss_push_pull(emb_2d, fv_instance_gt)
         loss_total_2d = self.fv_loss_seg_weight * loss_seg_2d + self.fv_loss_embed_weight * loss_emb_2d
         loss_total_2d = loss_total_2d.unsqueeze(0)

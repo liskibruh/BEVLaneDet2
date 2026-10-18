@@ -131,9 +131,9 @@ class GenerateLaneTargets(BaseTransform):
             lanes_xy_sparse_bin[idx] = np.array([x_bin, y_bin]).astype(int)
         
         # create offset maps
-        ipm_image   = np.zeros((ipm_h, ipm_w))
-        offset_map  = np.zeros((ipm_h, ipm_w))
-        height_map  = np.zeros((ipm_h, ipm_w))
+        ipm_image   = np.zeros((ipm_h, ipm_w), dtype=np.float32)
+        offset_map  = np.zeros((ipm_h, ipm_w), dtype=np.float32)
+        height_map  = np.zeros((ipm_h, ipm_w), dtype=np.float32)
         
         for idx in lanes_xy_sparse_bin:
             lane_sparse_bin = lanes_xy_sparse_bin[idx].T    # (2,M) -> (M,2)

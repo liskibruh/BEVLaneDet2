@@ -1,3 +1,3 @@
-from .lane_eval import DummyEval
+from .lane_eval import LaneEval
 
-__all__ = ['DummyEval']
+__all__ = ['LaneEval']
