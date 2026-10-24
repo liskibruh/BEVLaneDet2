@@ -1,3 +1,3 @@
-from .bevlanedet import BEVLaneDet
+from .bevlanedet import BEVLaneDet, BEVLaneDetVox
 
-__all__ = ['BEVLaneDet']
+__all__ = ['BEVLaneDet', 'BEVLaneDetVox']

@@ -24,7 +24,8 @@ model = dict(
         depth=34,
         in_channels=3,
         num_stages=4,
-        out_indices=(3, ),  # only last stage features
+        # out_indices=(3,),  # only last stage features
+        out_indices=(3,),  # only last stage features
         norm_eval=False,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet34'),
     ),

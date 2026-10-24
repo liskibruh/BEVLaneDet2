@@ -1,6 +1,7 @@
 import json
 import copy
 import sys
+import numpy as np
 from os import path as osp
 from torch.utils.data import Dataset
 
@@ -137,6 +138,76 @@ class ApolloSimDataset(Dataset):
                 raw_file = info_dict['raw_file']
                 info_dict["img_path"] = osp.join(self.data_root, raw_file)
                 # print(f"info_dict.keys(): {info_dict.keys()}")
+                data_infos.append(info_dict)
+        
+        return data_infos
+    
+    def filter_data(self):
+        # placeholder method for filtering data
+        return self.data_list
+    
+    def prepare_data(self, idx):
+        data_info = self.get_data_info(idx)
+        return self.pipeline(data_info)
+    
+    def __getitem__(self, idx):
+        data = self.prepare_data(idx)
+        
+        if data is None:
+            raise ValueError("data cannot be None, check data pipeline.")
+        
+        return data
+    
+@DATASETS.register_module()
+class ApolloSimDatasetVox(Dataset):
+    def __init__(self,
+                data_root, 
+                ann_file,
+                pipeline,
+                lazy_init,
+                feat_downscale=4):
+        
+        self._metainfo = {}
+        
+        self.data_root = data_root
+        self.feat_downscale = feat_downscale
+        self.ann_file = osp.join(data_root, ann_file)
+        
+        if not osp.exists(self.ann_file):
+            raise FileNotFoundError(f"{self.ann_file} does not exist")
+        
+        self.pipeline = Compose(pipeline)    
+        self.full_init()
+    
+    def full_init(self):
+        self.data_list = self.load_data_list()
+        self.data_list = self.filter_data()
+    
+    def __len__(self):
+        return len(self.data_list)
+    
+    @property
+    def metainfo(self):
+        return copy.deepcopy(self._metainfo)
+    
+    def get_data_info(self, idx):
+        data_info = copy.deepcopy(self.data_list[idx])
+        
+        if idx >= 0:
+            data_info['sample_idx'] = idx
+        else:
+            data_info['sample_idx'] = len(self) + idx
+        
+        return data_info
+    
+    def load_data_list(self):
+        data_infos = []
+        
+        with open(self.ann_file, 'r') as infile:
+            for line in infile:
+                info_dict = json.loads(line)
+                raw_file = info_dict['raw_file']
+                info_dict["img_path"] = osp.join(self.data_root, raw_file)
                 data_infos.append(info_dict)
         
         return data_infos

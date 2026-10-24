@@ -66,7 +66,6 @@ class InstanceEmbedding(BaseModule):
                 stride=1,
                 padding=1
             )
-            
         )
         
         self.me = Sequential(

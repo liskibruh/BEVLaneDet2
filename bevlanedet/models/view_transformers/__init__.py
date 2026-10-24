@@ -1,3 +1,3 @@
-from .fv2bev import FCTransform_
+from .fv2bev import FCTransform_, ExplicitVoxelProjection
 
-__all__ = ['FCTransform_']
+__all__ = ['FCTransform_', 'ExplicitVoxelProjection']
