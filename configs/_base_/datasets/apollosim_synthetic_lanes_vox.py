@@ -65,6 +65,16 @@ val_pipeline = [
         meter_per_pixel=meter_per_pixel,
         vc_config=vc_config
         ),
+    dict(
+        type="Voxel_Generator", 
+        base_height=base_height,
+        z_range=z_range,
+        roi_x=x_range,
+        roi_y=y_range,
+        grid_res=(meter_per_pixel, meter_per_pixel, meter_per_pixel),
+        input_shape=input_shape,
+        feat_downscale=feat_downscale,
+        ),
     dict(type="Resize", scale=(input_shape[1], input_shape[0]), keep_ratio=True),
     dict(type="PackLaneDataVox")
     # dict(type="RandomFlip", prob=0.5),

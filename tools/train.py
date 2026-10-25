@@ -1,4 +1,5 @@
 import argparse
+import torch
 import bevlanedet
 from mmengine.config import Config
 from mmengine.runner import Runner
@@ -15,7 +16,6 @@ def parse_args():
         help='Directory to save logs and checkpoints')
     parser.add_argument(
         '--resume',
-        action='store_true',
         help='Resume training from the latest checkpoint')
     parser.add_argument(
         '--amp',
@@ -52,7 +52,26 @@ def main():
 
     # Resume from latest checkpoint if requested
     if args.resume:
-        runner.resume()
+        _original_torch_load = torch.load
+
+        def torch_load_compat(*args, **kwargs):
+            kwargs.setdefault('weights_only', False)
+            return _original_torch_load(*args, **kwargs)
+
+        torch.load = torch_load_compat
+        
+        runner.resume(filename=args.resume)
+    
+    # model = runner.model
+    
+    # total_params = sum(p.numel() for p in model.parameters())
+    # train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    # print(f"Total parameters:     {total_params:,} ({total_params / 1e6:.2f} M)")
+    # print(f"Trainable parameters: {train_params:,} ({train_params / 1e6:.2f} M)")
+    # print(f"Frozen parameters:    {total_params - train_params:,}")
+    
+    # exit()
 
     # Start training
     runner.train()

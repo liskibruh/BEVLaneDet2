@@ -5,6 +5,7 @@ with read_base():
     from .._base_.datasets.apollosim_synthetic_lanes_vox import *
     # from .._base_.models.bevlanedet_r34 import *
     from .._base_.models.bevlanedet_r34_vox import *
+    # from .._base_.models.bevlanedet_r34_mod import *
     from .._base_.schedulers.schedule_2x import *
     from .._base_.default_runtime import *
 
@@ -17,9 +18,9 @@ custom_imports = dict(
     allow_failed_imports=False
 )
 
-work_dir = './work_dirs_train/bevlandet_base'
+work_dir = './work_dirs_test/bevlandet_base'
 
-# load_from = "./work_dirs/bevlandet_base/epoch_3.pth"
+# load_from = "./work_dirs_train/bevlandet_base/epoch_10.pth"
 
 # val_cfg = None
 # val_evaluator = None

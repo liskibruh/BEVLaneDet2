@@ -452,3 +452,58 @@ class BEVLaneHead(BaseDenseHead):
         """Calculate the loss based on the features extracted by the detection
         head."""
         pass
+
+@MODELS.register_module()
+class BEVLaneHeadVox(BaseDenseHead):
+    def __init__(self, output_size, embed_net_cfg, input_channels=256, init_cfg=None):
+        super().__init__(init_cfg=init_cfg)
+        
+        self.bev_up = Sequential(
+            build_upsample_layer(dict(type='bilinear', size=output_size, align_corners=False)),
+            Residual(
+                module=Sequential(
+                    ConvModule(
+                        in_channels=input_channels,
+                        out_channels=256,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=dict(type='ReLU')
+                    ),
+                    Dropout(drop_prob=0.2, inplace=False),
+                    ConvModule(
+                        in_channels=256,
+                        out_channels=64,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=None
+                    )
+                ),
+                downsample=build_conv_layer(
+                    dict(type='Conv2d'),
+                    in_channels=input_channels,
+                    out_channels=64,
+                    kernel_size=1
+                )
+            )
+        )
+        
+        self.head = MODELS.build(embed_net_cfg)
+    
+    def forward(self, bev_x):
+        bev_feat = self.bev_up(bev_x)
+        return self.head(bev_feat)
+    
+    def loss(self, bev_x):
+        bev_out = self.forward(bev_x)
+        # losses = self.loss_by_feat(nothing=0)
+        # return losses
+        return bev_out
+    
+    def loss_by_feat(self, **kwargs) -> dict:
+        """Calculate the loss based on the features extracted by the detection
+        head."""
+        pass

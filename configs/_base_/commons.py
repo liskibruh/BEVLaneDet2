@@ -1,6 +1,6 @@
 input_shape = (576, 1024)
 output_2d_shape = (144, 256)
-feat_downscale = 4
+feat_downscale = 32
 
 base_height=1.786
 x_range = (3, 103)

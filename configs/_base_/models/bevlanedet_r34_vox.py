@@ -24,7 +24,7 @@ model = dict(
         depth=34,
         in_channels=3,
         num_stages=4,
-        out_indices=(0,),  # only first stage features
+        out_indices=(3,),  # only last stage features
         norm_eval=False,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet34'),
     ),
@@ -46,7 +46,7 @@ model = dict(
         )
     ),
     bev_lane_head=dict(
-        type="BEVLaneHead",
+        type="BEVLaneHeadVox",
         output_size=bev_shape,
         input_channels=512,
         embed_net_cfg=dict(
@@ -118,4 +118,5 @@ model = dict(
     fv_loss_embed_weight=0.5,
     bb_out_ch=512,      # depends on backbone's (resenet) "out_indices" parameter
                         # [64, 128, 256, 512] for out_indices (0, 1, 2, 3)
+    bev_feat_ch=int(64*((2*z_range)/meter_per_pixel)),
 )
