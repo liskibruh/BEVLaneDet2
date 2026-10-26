@@ -24,15 +24,17 @@ model = dict(
         depth=34,
         in_channels=3,
         num_stages=4,
-        # out_indices=(3,),  # only last stage features
         out_indices=(3,),  # only last stage features
         norm_eval=False,
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet34'),
     ),
     s32_view_transformer=dict(
         type="FCTransform_Mod",
-        image_featmap_size=(512, input_shape[0]//feat_downscale, input_shape[1]//feat_downscale),
-        space_featmap_size=(512, 25, 5),
+        # image_featmap_size=(512, input_shape[0]//feat_downscale, input_shape[1]//feat_downscale),
+        image_featmap_size=(64, input_shape[0]//feat_downscale, input_shape[1]//feat_downscale),
+        # space_featmap_size=(512, 25, 5),
+        space_featmap_size=(64, 200, 48),
+        hidden_dim=256,
         init_cfg=None
     ),
     # s64_view_transformer=dict(
@@ -52,37 +54,16 @@ model = dict(
         )
     ),
     bev_lane_head=dict(
-        type="BEVLaneHead",
+        type="BEVLaneHeadVoxMod",
         output_size=bev_shape,
-        input_channels=512,
+        # input_channels=512,
+        input_channels=64,
         embed_net_cfg=dict(
             type="InstanceEmbeddingWithOffset",
             ci=64,
             co=2
         )
     ),
-    # lane_head=dict(
-    #     fv_lane_head=dict(
-    #         type="FVLaneHead",
-    #         output_size=output_2d_shape,
-    #         input_channels=512,
-    #         embed_net_cfg=dict(
-    #             type="InstanceEmbedding",
-    #             ci=32,
-    #             co=2
-    #         )
-    #     ),
-    #     bev_lane_head=dict(
-    #         type="BEVLaneHead",
-    #         output_size=bev_shape,
-    #         input_channels=512,
-    #         embed_net_cfg=dict(
-    #             type="InstanceEmbedding_offset_y_z",
-    #             ci=64,
-    #             co=2
-    #         )
-    #     )
-    # ),
     loss_seg=dict(
         type='SegLoss',
         bce_loss=dict(
@@ -124,4 +105,5 @@ model = dict(
     fv_loss_embed_weight=0.5,
     bb_out_ch=512,      # depends on backbone's (resenet) "out_indices" parameter
                         # [64, 128, 256, 512] for out_indices (0, 1, 2, 3)
+    bev_feat_ch=64,
 )

@@ -45,38 +45,26 @@ model = dict(
             co=2
         )
     ),
+    # bev_lane_head=dict(
+    #     type="BEVLaneHeadVox",
+    #     output_size=bev_shape,
+    #     input_channels=512,
+    #     embed_net_cfg=dict(
+    #         type="InstanceEmbeddingWithOffset",
+    #         ci=64,
+    #         co=2
+    #     )
+    # ),
     bev_lane_head=dict(
-        type="BEVLaneHeadVox",
+        type="BEVLaneHead",
         output_size=bev_shape,
-        input_channels=512,
+        input_channels=64,
         embed_net_cfg=dict(
             type="InstanceEmbeddingWithOffset",
             ci=64,
             co=2
         )
     ),
-    # lane_head=dict(
-    #     fv_lane_head=dict(
-    #         type="FVLaneHead",
-    #         output_size=output_2d_shape,
-    #         input_channels=512,
-    #         embed_net_cfg=dict(
-    #             type="InstanceEmbedding",
-    #             ci=32,
-    #             co=2
-    #         )
-    #     ),
-    #     bev_lane_head=dict(
-    #         type="BEVLaneHead",
-    #         output_size=bev_shape,
-    #         input_channels=512,
-    #         embed_net_cfg=dict(
-    #             type="InstanceEmbedding_offset_y_z",
-    #             ci=64,
-    #             co=2
-    #         )
-    #     )
-    # ),
     loss_seg=dict(
         type='SegLoss',
         bce_loss=dict(
@@ -118,5 +106,6 @@ model = dict(
     fv_loss_embed_weight=0.5,
     bb_out_ch=512,      # depends on backbone's (resenet) "out_indices" parameter
                         # [64, 128, 256, 512] for out_indices (0, 1, 2, 3)
-    bev_feat_ch=int(64*((2*z_range)/meter_per_pixel)),
+    # bev_feat_ch=int(64*((2*z_range)/meter_per_pixel)),
+    bev_feat_ch=64,
 )

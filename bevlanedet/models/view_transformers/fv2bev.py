@@ -60,7 +60,7 @@ class FCTransform_(BaseModule):
 
 @MODELS.register_module()
 class FCTransform_Mod(BaseModule):
-    def __init__(self, image_featmap_size, space_featmap_size, init_cfg=None):
+    def __init__(self, image_featmap_size, space_featmap_size, hidden_dim=256, init_cfg=None):
         super().__init__(init_cfg=init_cfg)
         
         ic, ih, iw = image_featmap_size
@@ -68,11 +68,18 @@ class FCTransform_Mod(BaseModule):
         
         self.image_featmpa_size = image_featmap_size
         self.space_featmap_size = space_featmap_size
+        # self.hidden_dim = hidden_dim
         
+        # self.fc_transform = Sequential(
+        #     nn.Linear(ih*iw, sh*sw),
+        #     nn.ReLU(),
+        #     nn.Linear(sh*sw, sh*sw),
+        #     nn.ReLU()
+        # )
         self.fc_transform = Sequential(
-            nn.Linear(ih*iw, sh*sw),
+            nn.Linear(ih*iw, hidden_dim),
             nn.ReLU(),
-            nn.Linear(sh*sw, sh*sw),
+            nn.Linear(hidden_dim, sh*sw),
             nn.ReLU()
         )
         

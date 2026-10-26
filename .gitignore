@@ -2,7 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.pth
 
 /data
 /work_dirs*
 /*egg-info*
+*.log

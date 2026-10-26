@@ -195,34 +195,29 @@ class BEVLaneDetMod(BaseDetector):
                 fv_loss_seg_weight=3,
                 fv_loss_embed_weight=0.5,
                 bb_out_ch=512,
+                bev_feat_ch=64,
                 init_cfg=None):
         
         super().__init__(data_preprocessor=data_preprocessor, init_cfg=init_cfg)
         
         self.backbone = MODELS.build(backbone)
         
-        self.down = Residual(
-            module = Sequential(
-                ConvModule(
-                    in_channels=bb_out_ch, 
-                    out_channels=1024, 
-                    kernel_size=3, 
-                    stride=2, 
-                    padding=1, 
-                    norm_cfg=dict(type='BN'), 
-                    act_cfg=dict(type='ReLU')
-                    ),
-                ConvModule(
-                    in_channels=1024, 
-                    out_channels=1024, 
-                    kernel_size=3, 
-                    stride=1, 
-                    padding=1, 
-                    norm_cfg=dict(type='BN'), 
-                    act_cfg=None
-                    )
-            ),
-            downsample = nn.Conv2d(bb_out_ch, 1024, kernel_size=3, stride=2, padding=1)
+        self.ch_reduce = ConvModule(
+            in_channels=bb_out_ch,
+            out_channels=64,
+            kernel_size=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU')
+        )
+        
+        self.downscale = ConvModule(
+            in_channels=64,
+            out_channels=bev_feat_ch,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU')
         )
         
         # MODELS
@@ -250,17 +245,16 @@ class BEVLaneDetMod(BaseDetector):
         return feat
     
     def _forward(self, inputs):
-        img_s32 = self.extract_feat(inputs)[0]      # only last stage feature
+        img_32 = self.extract_feat(inputs)[0]      # only last stage feature
         # img_s64 = self.down(img_s32)
-        bev_32 = self.s32_view_transformer(img_s32)
-        # bev_64 = self.s64_view_transformer(img_s64)
-        # bev = torch.cat([bev_32, bev_64], dim=1)
-        bev = bev_32
+        img_32_bev = self.ch_reduce(img_32)
+        bev_feats = self.s32_view_transformer(img_32_bev)
+        bev_feats = self.downscale(bev_feats)
         
         if self.training:
-            return self.bev_lane_head(bev), self.fv_lane_head(img_s32)
+            return self.bev_lane_head(bev_feats), self.fv_lane_head(img_32)
         else:
-            return self.bev_lane_head(bev)
+            return self.bev_lane_head(bev_feats)
         
     def loss(self, inputs, data_samples):
         losses = dict()
@@ -366,47 +360,23 @@ class BEVLaneDetVox(BaseDetector):
         
         self.backbone = MODELS.build(backbone)
         
-        self.down = Residual(
-            module = Sequential(
-                ConvModule(
-                    in_channels=bb_out_ch, 
-                    out_channels=1024, 
-                    kernel_size=3, 
-                    stride=2, 
-                    padding=1, 
-                    norm_cfg=dict(type='BN'), 
-                    act_cfg=dict(type='ReLU')
-                    ),
-                ConvModule(
-                    in_channels=1024, 
-                    out_channels=1024, 
-                    kernel_size=3, 
-                    stride=1, 
-                    padding=1, 
-                    norm_cfg=dict(type='BN'), 
-                    act_cfg=None
-                    )
-            ),
-            downsample = nn.Conv2d(bb_out_ch, 1024, kernel_size=3, stride=2, padding=1)
+        self.ch_reduce = ConvModule(
+            in_channels=bb_out_ch,
+            out_channels=64,
+            kernel_size=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU')
         )
         
-        self.bev_down = nn.ModuleDict(dict(
-            down_pre=Sequential(
-                ConvModule(in_channels=bb_out_ch, out_channels=64, kernel_size=3,
-                        stride=1, padding=1, norm_cfg=dict(type='BN'), act_cfg=dict(type='ReLU')),
-                # ConvModule(in_channels=128, out_channels=64, kernel_size=3,
-                #         stride=1, padding=1, norm_cfg=dict(type='BN'), act_cfg=dict(type='ReLU')),
-            ),
-            residual=Residual(
-                module=Sequential(
-                    ConvModule(in_channels=bev_feat_ch, out_channels=1024, kernel_size=3,
-                            stride=2, padding=1, norm_cfg=dict(type='BN'), act_cfg=dict(type='ReLU')),
-                    ConvModule(in_channels=1024, out_channels=512, kernel_size=3,
-                            stride=1, padding=1, norm_cfg=dict(type='BN'), act_cfg=None),
-                ),
-                downsample=nn.Conv2d(bev_feat_ch, 512, kernel_size=3, stride=2, padding=1),
-            ),
-        ))
+        self.downscale = ConvModule(
+            in_channels=64,
+            out_channels=bev_feat_ch,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU')
+        )
         
         # MODELS
         self.view_transformer = MODELS.build(view_transformer)
@@ -431,25 +401,55 @@ class BEVLaneDetVox(BaseDetector):
         feat = self.backbone(input)
         return feat
     
+    def masked_mean_height(self, voxel_feats, voxel_mask):
+        """
+        Args:
+            voxel_feats: (B, C, Nx, Nz, Ny)
+            voxel_mask:  (B, 1, Nx, Nz, Ny)
+                        True/1 means valid.
+
+        Returns:
+            bev_feats:   (B, C, Nx, Ny)
+        """
+        if voxel_mask.ndim == 4:
+            voxel_mask = voxel_mask.unsqueeze(1)
+
+        mask = voxel_mask.to(
+            device=voxel_feats.device,
+            dtype=voxel_feats.dtype,
+        )
+
+        if mask.shape[0] != voxel_feats.shape[0]:
+            raise ValueError("Batch dimensions of features and mask do not match.")
+
+        if mask.shape[2:] != voxel_feats.shape[2:]:
+            raise ValueError(
+                f"Feature shape {tuple(voxel_feats.shape)} and "
+                f"mask shape {tuple(mask.shape)} are incompatible."
+            )
+
+        masked_feats = voxel_feats * mask
+        feat_sum = masked_feats.sum(dim=3)
+        valid_count = mask.sum(dim=3)
+        bev_feats = feat_sum / valid_count.clamp_min(1.0)
+
+        return bev_feats
+    
     def _forward(self, inputs):
         img = inputs['img']
         vox_proj_idx = inputs['voxel_proj_index']
         vox_valid_mask = inputs['voxel_valid_mask']
-        img_s32 = self.extract_feat(img)[0]      # only last stage feature
-        img_s32_bev = self.bev_down['down_pre'](img_s32)
-        voxel_feats, voxel_mask = self.view_transformer(img_s32_bev, vox_proj_idx, vox_valid_mask)
         
-        # todo: collapse vertical dimension (flashocc-type)
-        B, C, Nx, Nz, Ny = voxel_feats.shape
-        bev_feats = voxel_feats.permute(0,1,3,2,4).reshape(B, C*Nz, Nx, Ny)
-        bev_feats = self.bev_down['residual'](bev_feats)
+        img_32 = self.extract_feat(img)[0]      # only last stage feature
+        img_32_bev = self.ch_reduce(img_32)
+        voxel_feats, voxel_mask = self.view_transformer(img_32_bev, vox_proj_idx, vox_valid_mask)
         
-        # print(f"voxel_feats.shape: {voxel_feats.shape}")
-        # print(f"voxel_mask.shape: {voxel_mask.shape}")
-        # print(f"bev_feats.shape: {bev_feats.shape}")
+        # B, C, Nx, Nz, Ny = voxel_feats.shape
+        bev_feats = self.masked_mean_height(voxel_feats, voxel_mask)
+        bev_feats = self.downscale(bev_feats)
         
         if self.training:
-            return self.bev_lane_head(bev_feats), self.fv_lane_head(img_s32)
+            return self.bev_lane_head(bev_feats), self.fv_lane_head(img_32)
         else:
             return self.bev_lane_head(bev_feats)
         

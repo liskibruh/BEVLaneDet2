@@ -454,7 +454,7 @@ class BEVLaneHead(BaseDenseHead):
         pass
 
 @MODELS.register_module()
-class BEVLaneHeadVox(BaseDenseHead):
+class BEVLaneHeadVoxMod(BaseDenseHead):
     def __init__(self, output_size, embed_net_cfg, input_channels=256, init_cfg=None):
         super().__init__(init_cfg=init_cfg)
         
