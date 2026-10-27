@@ -1,4 +1,6 @@
+import torch
 from torch import nn
+from mmcv.cnn import ConvModule
 
 def naive_init_module(mod):
     for m in mod.modules():
@@ -26,3 +28,68 @@ class Residual(nn.Module):
         out += identity
         
         return self.relu(out)
+
+def masked_mean_height(voxel_feats, voxel_mask):
+    """
+    Args:
+        voxel_feats: (B, C, Nx, Nz, Ny)
+        voxel_mask:  (B, 1, Nx, Nz, Ny)
+                    True/1 means valid.
+
+    Returns:
+        bev_feats:   (B, C, Nx, Ny)
+    """
+    if voxel_mask.ndim == 4:
+        voxel_mask = voxel_mask.unsqueeze(1)
+
+    mask = voxel_mask.to(
+        device=voxel_feats.device,
+        dtype=voxel_feats.dtype,
+    )
+
+    if mask.shape[0] != voxel_feats.shape[0]:
+        raise ValueError("Batch dimensions of features and mask do not match.")
+
+    if mask.shape[2:] != voxel_feats.shape[2:]:
+        raise ValueError(
+            f"Feature shape {tuple(voxel_feats.shape)} and "
+            f"mask shape {tuple(mask.shape)} are incompatible."
+        )
+
+    masked_feats = voxel_feats * mask
+    feat_sum = masked_feats.sum(dim=3)
+    valid_count = mask.sum(dim=3)
+    bev_feats = feat_sum / valid_count.clamp_min(1.0)
+
+    return bev_feats
+
+class LearnedHeightCompression(nn.Module):
+    def __init__(self, channels=64, out_channels=64, num_z=28):
+        super().__init__()
+        self.compress=ConvModule(
+            in_channels=channels * num_z + num_z,
+            out_channels=out_channels,
+            kernel_size=1,
+            bias=False,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU'),
+            inplace=True
+        )
+    
+    def forward(self, voxel_feats, voxel_mask):
+        
+        B, C, Nx, Nz, Ny = voxel_feats.shape
+        
+        mask = voxel_mask.to(
+            device=voxel_feats.device,
+            dtype=voxel_feats.dtype
+        )
+        
+        feats = voxel_feats * mask
+        feats = feats.permute(0, 1, 3, 2, 4).contiguous()
+        feats = feats.reshape(B, C*Nz, Nx, Ny)
+        
+        mask_channels = mask[:, 0].permute(0, 2, 1, 3).contiguous()
+        feats = torch.cat([feats, mask_channels], dim=1)
+        
+        return self.compress(feats)

@@ -1,7 +1,7 @@
 import logging
 import torch
 from torch import nn
-from ..utils.common_modules import Residual
+from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCompression
 # from ...utils.cluster import embedding_post
 # from ...evaluation.utils.post_process_utils import bev_instance2points_with_offset_z
 
@@ -365,7 +365,7 @@ class BEVLaneDetVox(BaseDetector):
             out_channels=64,
             kernel_size=1,
             norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')
+            act_cfg=dict(type='ReLU')   # todo: try removing this act fn (mobilenetv2)
         )
         
         self.downscale = ConvModule(
@@ -389,6 +389,7 @@ class BEVLaneDetVox(BaseDetector):
         self.loss_push_pull = MODELS.build(loss_embed)
         self.loss_bce_logits_offset = MODELS.build(loss_offset)
         self.loss_mse = MODELS.build(loss_z)
+        self.learned_height_compressor = LearnedHeightCompression(channels=64, out_channels=64, num_z=28)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
         self.bev_loss_embed_weight = bev_loss_embed_weight
@@ -397,43 +398,10 @@ class BEVLaneDetVox(BaseDetector):
         self.fv_loss_seg_weight = fv_loss_seg_weight
         self.fv_loss_embed_weight = fv_loss_embed_weight
         
+        
     def extract_feat(self, input):
         feat = self.backbone(input)
         return feat
-    
-    def masked_mean_height(self, voxel_feats, voxel_mask):
-        """
-        Args:
-            voxel_feats: (B, C, Nx, Nz, Ny)
-            voxel_mask:  (B, 1, Nx, Nz, Ny)
-                        True/1 means valid.
-
-        Returns:
-            bev_feats:   (B, C, Nx, Ny)
-        """
-        if voxel_mask.ndim == 4:
-            voxel_mask = voxel_mask.unsqueeze(1)
-
-        mask = voxel_mask.to(
-            device=voxel_feats.device,
-            dtype=voxel_feats.dtype,
-        )
-
-        if mask.shape[0] != voxel_feats.shape[0]:
-            raise ValueError("Batch dimensions of features and mask do not match.")
-
-        if mask.shape[2:] != voxel_feats.shape[2:]:
-            raise ValueError(
-                f"Feature shape {tuple(voxel_feats.shape)} and "
-                f"mask shape {tuple(mask.shape)} are incompatible."
-            )
-
-        masked_feats = voxel_feats * mask
-        feat_sum = masked_feats.sum(dim=3)
-        valid_count = mask.sum(dim=3)
-        bev_feats = feat_sum / valid_count.clamp_min(1.0)
-
-        return bev_feats
     
     def _forward(self, inputs):
         img = inputs['img']
@@ -445,7 +413,8 @@ class BEVLaneDetVox(BaseDetector):
         voxel_feats, voxel_mask = self.view_transformer(img_32_bev, vox_proj_idx, vox_valid_mask)
         
         # B, C, Nx, Nz, Ny = voxel_feats.shape
-        bev_feats = self.masked_mean_height(voxel_feats, voxel_mask)
+        # bev_feats = masked_mean_height(voxel_feats, voxel_mask)
+        bev_feats = self.learned_height_compressor(voxel_feats, voxel_mask)
         bev_feats = self.downscale(bev_feats)
         
         if self.training:

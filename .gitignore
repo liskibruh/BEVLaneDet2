@@ -7,4 +7,3 @@ __pycache__/
 /data
 /work_dirs*
 /*egg-info*
-*.log
