@@ -56,9 +56,9 @@ model = dict(
     #     )
     # ),
     bev_lane_head=dict(
-        type="BEVLaneHead",
+        type="BEVLaneHeadVoxMod",
         output_size=bev_shape,
-        input_channels=64,
+        input_channels=64,  # 96 for global sptial module exp
         embed_net_cfg=dict(
             type="InstanceEmbeddingWithOffset",
             ci=64,

@@ -1,7 +1,7 @@
 import logging
 import torch
 from torch import nn
-from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCompression
+from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCompression, GlobalSpatialRelationModule
 # from ...utils.cluster import embedding_post
 # from ...evaluation.utils.post_process_utils import bev_instance2points_with_offset_z
 
@@ -390,6 +390,7 @@ class BEVLaneDetVox(BaseDetector):
         self.loss_bce_logits_offset = MODELS.build(loss_offset)
         self.loss_mse = MODELS.build(loss_z)
         self.learned_height_compressor = LearnedHeightCompression(channels=64, out_channels=64, num_z=28)
+        self.spatial_relation_module = GlobalSpatialRelationModule(in_shape=(100, 24), out_shape=(50, 12), in_ch=64, context_ch=32, out_ch=32)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
         self.bev_loss_embed_weight = bev_loss_embed_weight
@@ -416,6 +417,7 @@ class BEVLaneDetVox(BaseDetector):
         # bev_feats = masked_mean_height(voxel_feats, voxel_mask)
         bev_feats = self.learned_height_compressor(voxel_feats, voxel_mask)
         bev_feats = self.downscale(bev_feats)
+        bev_feats = self.spatial_relation_module(bev_feats)
         
         if self.training:
             return self.bev_lane_head(bev_feats), self.fv_lane_head(img_32)

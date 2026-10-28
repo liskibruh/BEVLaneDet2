@@ -1,6 +1,7 @@
 import torch
 from torch import nn
-from mmcv.cnn import ConvModule
+import torch.nn.functional as F
+from mmcv.cnn import ConvModule, build_conv_layer, build_upsample_layer
 
 def naive_init_module(mod):
     for m in mod.modules():
@@ -93,3 +94,62 @@ class LearnedHeightCompression(nn.Module):
         feats = torch.cat([feats, mask_channels], dim=1)
         
         return self.compress(feats)
+
+class GlobalSpatialRelationModule(nn.Module):
+    def __init__(self, in_shape, out_shape, in_ch, context_ch, out_ch):
+        super().__init__()
+        
+        in_h, in_w = in_shape
+        self.out_h, self.out_w = out_shape
+        
+        self.fc_spatial = nn.Sequential(
+            nn.Linear(in_h*in_w, self.out_h*self.out_w),
+            nn.ReLU(inplace=True),
+            # nn.Linear(self.out_h*self.out_w, self.out_h*self.out_w),
+            # nn.ReLU(inplace=True)
+            )
+                
+        self.pointwise_spatial = ConvModule(
+            in_channels=in_ch,
+            out_channels=context_ch,
+            kernel_size=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=None
+        )
+                
+        # self.pointwise_bev = ConvModule(
+        #     in_channels=in_ch,
+        #     out_channels=64,
+        #     kernel_size=1,
+        #     norm_cfg=dict(type='BN'),
+        #     act_cfg=None
+        # )
+        
+        self.fuse = ConvModule(
+            in_channels=in_ch + context_ch,
+            out_channels=out_ch,
+            kernel_size=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=None
+        )        
+    
+    def forward(self, bev_feats):
+        B, C, X, Y = bev_feats.shape
+        
+        # bev_feats = self.pointwise_bev(bev_feats)
+
+        spatial_feats = bev_feats.reshape(B, C, X*Y).to(device=bev_feats.device, dtype=bev_feats.dtype)
+        spatial_feats = self.fc_spatial(spatial_feats)
+        spatial_feats = spatial_feats.reshape(B, C, self.out_h, self.out_w)
+        spatial_feats = self.pointwise_spatial(spatial_feats)
+        
+        spatial_feats = F.interpolate(
+            spatial_feats,
+            size=(X,Y),
+            mode='bilinear',
+            align_corners=False
+        )
+        
+        combined = torch.concat([bev_feats, spatial_feats], dim=1)
+        
+        return bev_feats + self.fuse(combined)
