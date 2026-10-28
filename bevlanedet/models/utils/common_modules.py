@@ -152,4 +152,4 @@ class GlobalSpatialRelationModule(nn.Module):
         
         combined = torch.concat([bev_feats, spatial_feats], dim=1)
         
-        return bev_feats + self.fuse(combined)
+        return self.fuse(combined)

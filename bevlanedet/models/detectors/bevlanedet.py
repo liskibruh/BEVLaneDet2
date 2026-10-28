@@ -390,7 +390,7 @@ class BEVLaneDetVox(BaseDetector):
         self.loss_bce_logits_offset = MODELS.build(loss_offset)
         self.loss_mse = MODELS.build(loss_z)
         self.learned_height_compressor = LearnedHeightCompression(channels=64, out_channels=64, num_z=28)
-        self.spatial_relation_module = GlobalSpatialRelationModule(in_shape=(100, 24), out_shape=(50, 12), in_ch=64, context_ch=32, out_ch=32)
+        self.spatial_relation_module = GlobalSpatialRelationModule(in_shape=(100, 24), out_shape=(50, 12), in_ch=64, context_ch=8, out_ch=72)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
         self.bev_loss_embed_weight = bev_loss_embed_weight
@@ -415,8 +415,11 @@ class BEVLaneDetVox(BaseDetector):
         
         # B, C, Nx, Nz, Ny = voxel_feats.shape
         # bev_feats = masked_mean_height(voxel_feats, voxel_mask)
+        
         bev_feats = self.learned_height_compressor(voxel_feats, voxel_mask)
+        
         bev_feats = self.downscale(bev_feats)
+        
         bev_feats = self.spatial_relation_module(bev_feats)
         
         if self.training:
