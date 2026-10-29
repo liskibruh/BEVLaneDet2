@@ -8,4 +8,4 @@ __pycache__/
 /work_dirs*
 /*egg-info*
 logs/train_bevlanedet_vox_exp3_20261027_142713_wrong.log
-logs/train_bevlanedet_vox_exp4_20261028_231534.log
+# logs/train_bevlanedet_vox_exp4_20261028_231534.log
