@@ -29,7 +29,7 @@ model = dict(
         init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet34'),
     ),
     view_transformer=dict(
-        type="ExplicitVoxelProjection",
+        type="ExplicitVoxelProjectionBilinear",
         z_range=z_range,
         roi_x=x_range,
         roi_y=y_range,

@@ -1,6 +1,6 @@
 from .models.backbones.resnet_height_aware import ResNet_HeightAware
 from .models.detectors.bevlanedet import BEVLaneDet, BEVLaneDetVox, BEVLaneDetMod
-from .models.view_transformers.fv2bev import FCTransform_, ExplicitVoxelProjection, FCTransform_Mod
+from .models.view_transformers.fv2bev import FCTransform_, ExplicitVoxelProjection, ExplicitVoxelProjectionBilinear, FCTransform_Mod
 from .models.data_preprocessors import CustomDataPreprocessor
 from .models.heads import InstanceEmbedding, FVLaneHead, InstanceEmbeddingWithOffset, BEVLaneHead, BEVLaneHeadVoxMod
 from .models.losses import SoftIOULoss, NDPushPullLoss
@@ -10,4 +10,5 @@ from .evaluation import LaneEval
 __all__ = ["BEVLaneDet", "BEVLaneDetVox", "FCTransform_", "InstanceEmbedding", "FVLaneHead",
            "InstanceEmbeddingWithOffset", "BEVLaneHead", "BEVLaneHeadVoxMod", "ApolloSimDataset", 
            "SoftIOULoss", "NDPushPullLoss", "LaneEval", "CustomDataPreprocessor", 
-           "ExplicitVoxelProjection", "FCTransform_Mod", "BEVLaneDetMod", "ResNet_HeightAware"]
+           "ExplicitVoxelProjection", "ExplicitVoxelProjectionBilinear", "FCTransform_Mod", "BEVLaneDetMod", 
+           "ResNet_HeightAware"]

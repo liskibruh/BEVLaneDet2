@@ -304,6 +304,84 @@ class GenerateLaneTargets(BaseTransform):
         return results
 
 @TRANSFORMS.register_module()
+class GenerateOccupancyTargets(BaseTransform):
+    def __init__(self, x_range, y_range, z_range, grid_res, z_vox_pad=2, y_vox_pad=3):
+        self.x_range = x_range
+        self.y_range = y_range
+        self.z_range = z_range
+        self.grid_res = grid_res
+        self.z_vox_pad = z_vox_pad
+        self.y_vox_pad = y_vox_pad
+        
+        self.vox_length = int((self.x_range[1] - self.x_range[0]) / grid_res[0])
+        self.vox_width = int((self.y_range[1] - self.y_range[0]) / grid_res[1])
+        self.vox_height = int((self.z_range[1] - self.z_range[0]) / grid_res[2])
+    
+    def pts_to_voxel_indices(self, lane_points):
+        
+        x_min, x_max = self.x_range
+        y_min, y_max = self.y_range
+        z_min, z_max = self.z_range
+        
+        valid = (
+            (lane_points[:, 0] >= x_min) & (lane_points[:, 0] <= x_max) &
+            (lane_points[:, 1] >= y_min) & (lane_points[:, 1] <= y_max) &
+            (lane_points[:, 2] >= z_min) & (lane_points[:, 2] <= z_max)
+        )
+        
+        lane_points = lane_points[valid]
+        
+        x_indices = (lane_points[:, 0] - x_min) / self.grid_res[0]        # (M, 1)
+        y_indices = (lane_points[:, 1] - y_min) / self.grid_res[1]        # (M, 1)
+        z_indices = (lane_points[:, 2] - z_min) / self.grid_res[2]        # (M, 1)
+        
+        voxel_xyz = np.stack([
+            x_indices,
+            y_indices,
+            z_indices
+        ], axis=1).astype(np.int32)     # check axis!!!
+        
+        return voxel_xyz
+    
+    def transform(self, results):
+        lanes_ground = results['laneLines']
+        
+        occupancy = np.zeros((self.vox_length, self.vox_height, self.vox_width), dtype=np.uint8)
+        
+        for idx in range(len(lanes_ground)):
+            visibility = results['laneLines_visibility'][idx]
+            lane_ground = np.array(lanes_ground[idx])
+            lane_ground = lane_ground[visibility>0.5]      # (M, 3)
+            
+            voxel_indices = self.pts_to_voxel_indices(lane_ground)
+            # voxel_indices = voxel_indices[:, [0, 2, 1]]     # XYZ -> XZY
+
+            x = voxel_indices[:, 0]
+            y = voxel_indices[:, 1]
+            z = voxel_indices[:, 2]
+            
+            occupancy[x, z, y] = 1      # notice the axis-flip (XYZ -> XZY)
+            
+            # cuboid padding in Y-Z planes
+            for dy in range(-self.y_vox_pad, self.y_vox_pad + 1):
+                for dz in range(-self.z_vox_pad, self.z_vox_pad + 1):
+                    
+                    y_pad = y + dy
+                    z_pad = z + dz
+                    
+                    valid = (
+                        (y_pad >= 0) & (y_pad <= self.vox_width) &
+                        (z_pad >= 0) & (z_pad <= self.vox_height)
+                    )
+                    
+                    occupancy[x[valid], z_pad[valid], y_pad[valid]] = 1
+            
+        results['bev_gt_occ'] = occupancy
+        
+        return results
+            
+
+@TRANSFORMS.register_module()
 class MultiTargetResize(BaseTransform):
     def __init__(self, image_size, image_gt_size):
         self.im_h = image_size[0]
@@ -459,7 +537,7 @@ class Voxel_Generator(BaseTransform):
         )
         z_centers = (
             torch.arange(self.num_grids_z) * self.grid_res[2]
-            + self.base_height
+            # + self.base_height
             - self.z_range
             + self.grid_res[2] / 2
         )
@@ -581,6 +659,190 @@ class Voxel_Generator(BaseTransform):
         uv_indices_full[:, voxel_ids] = np.floor(
             uv_feature,
         ).astype(np.int64)
+        
+        voxel_valid_mask[voxel_ids] = True
+                
+        results["voxels_info"] = dict(
+            voxel_uv_idx=to_tensor(uv_indices_full),
+            voxel_valid_mask=to_tensor(voxel_valid_mask),
+            roi_x=self.roi_x,
+            roi_y=self.roi_y,
+            z_range=self.z_range,
+            num_grids_x=self.num_grids_x,
+            num_grids_y=self.num_grids_y,
+            num_grids_z=self.num_grids_z,
+            grid_res=self.grid_res,
+            base_height=self.base_height,
+        )
+
+        return results
+
+@TRANSFORMS.register_module()
+class Voxel_Generator_Cont(BaseTransform):
+    def __init__(
+        self,
+        base_height=1.1,
+        roi_x=(3, 103),       #  X: forward
+        roi_y=(-12, 12),      #  Y: lateral
+        z_range=7,            #  Z: vertical half-range
+        grid_res=(0.5, 0.5, 0.5),  # (dx, dy, dz)
+        input_shape=(576, 1024),
+        feat_downscale=16
+    ):
+        self.base_height = base_height
+        self.z_range = z_range
+        self.feat_downscale = feat_downscale
+        self.input_shape = input_shape
+
+        self.roi_x = torch.tensor(roi_x, dtype=torch.float32)
+        self.roi_y = torch.tensor(roi_y, dtype=torch.float32)
+        self.grid_res = torch.tensor(grid_res, dtype=torch.float32)
+
+        self.num_grids_x = int(
+            (self.roi_x[1] - self.roi_x[0]) / self.grid_res[0]
+        )
+        self.num_grids_y = int(
+            (self.roi_y[1] - self.roi_y[0]) / self.grid_res[1]
+        )
+        self.num_grids_z = int(
+            (2 * self.z_range) / self.grid_res[2]
+        )
+
+        self._build_centers()
+
+    def _build_centers(self):
+        x_centers = (
+            torch.arange(self.num_grids_x) * self.grid_res[0]
+            + self.roi_x[0]
+            + self.grid_res[0] / 2
+        )
+        y_centers = (
+            torch.arange(self.num_grids_y) * self.grid_res[1]
+            + self.roi_y[0]
+            + self.grid_res[1] / 2
+        )
+        z_centers = (
+            torch.arange(self.num_grids_z) * self.grid_res[2]
+            # + self.base_height
+            - self.z_range
+            + self.grid_res[2] / 2
+        )
+
+        # BEV centers: (X, Y)
+        xx, yy = torch.meshgrid(x_centers, y_centers, indexing="ij")
+        self.map_centers = torch.stack((xx, yy), dim=-1).reshape(-1, 2)
+
+        # 3D voxel centers: (X, Y, Z)
+        xx, yy, zz = torch.meshgrid(
+            x_centers, y_centers, z_centers, indexing="ij"
+        )
+        self.voxel_centers = torch.stack(
+            (xx, yy, zz), dim=-1
+        ).reshape(-1, 3).T.contiguous().numpy()
+
+    def transform(self, results: dict):
+        cam_intrinsic = np.asarray(results["K"], dtype=np.float64)
+        H_vc = np.asarray(results["H_vc"], dtype=np.float64)
+        num_voxels = self.voxel_centers.shape[1]
+        
+        ground2cam = results["ground2cam"]
+        
+        voxel_centers = self.voxel_centers[[1, 0, 2], :]     # (3, N)
+        ones = np.ones((1, voxel_centers.shape[1]), dtype=voxel_centers.dtype)
+        
+        centers_homo = np.concatenate(
+            [voxel_centers, ones], axis=0
+        )
+        
+        voxel_cam = ground2cam @ centers_homo
+        
+        uv_indices_full = np.zeros((2, num_voxels), dtype=np.float32)
+        voxel_valid_mask = np.zeros(num_voxels, dtype=bool)
+        voxel_ids = np.flatnonzero(voxel_cam[2, :] > 1e-3)
+        
+        # valid_depth = voxel_cam[2, :] > 1e-3
+        
+        # for visual
+        # vis_voxel_centers_valid = ((voxel_centers[2, :] > 1e-3) & (voxel_centers[2, :] <= 1.6))
+        # vis_voxel_centers = voxel_centers[:, vis_voxel_centers_valid]
+        # vis_voxel_centers = voxel_centers.copy()
+        # vis_ones = np.ones((1, vis_voxel_centers.shape[1]), dtype=vis_voxel_centers.dtype)
+        # vis_centers_homo = np.concatenate(
+        #     [vis_voxel_centers, vis_ones], axis=0
+        # )
+        # voxel_cam_vis = ground2cam @ vis_centers_homo
+        # vis_valid = ((voxel_cam_vis[2, :] > 1e-3) & (voxel_cam_vis[2,: ] <=5.00))
+        # voxel_cam_vis = voxel_cam_vis[:3, vis_valid]
+        # voxel_uvz_vis = cam_intrinsic @ voxel_cam_vis[:3, :]
+        # voxel_uv_vis = (
+        #     voxel_uvz_vis[:2, :] / voxel_uvz_vis[2:3, :]
+        # )
+        # voxel_uv_homo_vis = np.vstack([
+        #     voxel_uv_vis,
+        #     np.ones((1, voxel_uv_vis.shape[1])),
+        # ])
+        # vis_uvz_warped_homo = H_vc @ voxel_uv_homo_vis
+        # vis_valid_warped_homo = np.abs(vis_uvz_warped_homo[2, :] > 1e-8)
+        # vis_uv_warped = (
+        #     vis_uvz_warped_homo[:2, vis_valid_warped_homo]
+        #     / vis_uvz_warped_homo[2:3, vis_valid_warped_homo]
+        # )
+        
+        voxel_cam_valid = voxel_cam[:3, voxel_ids]
+        voxel_uvz = cam_intrinsic @ voxel_cam_valid
+        voxel_uv = (
+            voxel_uvz[:2, :] / voxel_uvz[2:3, :]
+        )
+        voxel_uv_homo = np.vstack([
+            voxel_uv,
+            np.ones((1, voxel_uv.shape[1])),
+        ])
+                
+        uv_warped_homo = H_vc @ voxel_uv_homo
+        valid_warped_homo = np.abs(uv_warped_homo[2, :]) > 1e-8
+        voxel_ids = voxel_ids[valid_warped_homo]
+        uv_warped = (
+            uv_warped_homo[:2, valid_warped_homo]
+            / uv_warped_homo[2:3, valid_warped_homo]
+        )
+
+        featH = self.input_shape[0]/self.feat_downscale
+        featW = self.input_shape[1]/self.feat_downscale
+        
+        # feat_H, feat_W = 144, 256
+        scale_x = featW/results["img"].shape[1]
+        scale_y = featH/results["img"].shape[0] 
+        
+        # for visual
+        # vis_uv_feature = vis_uv_warped * np.array([
+        #     [scale_x],
+        #     [scale_y],
+        # ])
+        
+        uv_feature = uv_warped * np.array([
+            [scale_x],
+            [scale_y],
+        ])
+        
+        valid_bounds = (
+            (uv_feature[0]>=0) & (uv_feature[0]<featW) &
+            (uv_feature[1]>=0) & (uv_feature[1]<featH)
+        )
+        
+        # for visual
+        # valid_bounds_vis = (
+        #     (vis_uv_feature[0]>=0) & (vis_uv_feature[0]<featW) &
+        #     (vis_uv_feature[1]>=0) & (vis_uv_feature[1]<featH)
+        # )
+        
+        # vis_uv_feature = vis_uv_feature[:, valid_bounds_vis]
+        # visualize_voxel_projections(warped_img=results["img"], uv_warped=vis_uv_warped, uv_feature=vis_uv_feature)
+        # exit()
+        
+        voxel_ids = voxel_ids[valid_bounds]
+        uv_feature = uv_feature[:, valid_bounds]
+        
+        uv_indices_full[:, voxel_ids] = uv_feature
         
         voxel_valid_mask[voxel_ids] = True
                 

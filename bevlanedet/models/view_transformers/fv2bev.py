@@ -239,3 +239,135 @@ class ExplicitVoxelProjection(BaseModule):
         ).unsqueeze(1).contiguous()
 
         return voxel_feats, voxel_mask
+
+@MODELS.register_module()
+class ExplicitVoxelProjectionBilinear(BaseModule):
+    def __init__(
+        self,
+        z_range,
+        roi_x,
+        roi_y,
+        grid_res,
+    ):
+        super().__init__()
+
+        self.z_range = z_range
+        self.roi_x = roi_x
+        self.roi_y = roi_y
+        self.grid_res = grid_res
+
+        self.num_grids_x = int(
+            (roi_x[1] - roi_x[0]) / grid_res[0]
+        )
+        self.num_grids_y = int(
+            (roi_y[1] - roi_y[0]) / grid_res[1]
+        )
+        self.num_grids_z = int(
+            (2 * z_range) / grid_res[2]
+        )
+
+        self.num_voxels = (
+            self.num_grids_x
+            * self.num_grids_y
+            * self.num_grids_z
+        )
+
+    def forward(
+        self,
+        x,
+        voxel_proj_idx,
+        voxel_valid_mask,
+    ):
+        """
+        Args:
+            x:
+                (B, C, Hf, Wf), backbone feature map.
+
+            voxel_proj_idx:
+                (B, 2, N), decimal projected feature coordinates.
+                Index 0 = u (column), index 1 = v (row).
+
+            voxel_valid_mask:
+                (B, N), True for valid projections.
+
+        Returns:
+            voxel_feats:
+                (B, C, Nx, Nz, Ny)
+
+            voxel_mask:
+                (B, 1, Nx, Nz, Ny)
+        """
+
+        B, C, Hf, Wf = x.shape
+
+        assert voxel_proj_idx.shape == (
+            B, 2, self.num_voxels
+        )
+
+        assert voxel_valid_mask.shape == (
+            B, self.num_voxels
+        )
+
+        idx = voxel_proj_idx.to(
+            device=x.device,
+            dtype=torch.float32,
+        )
+
+        valid = voxel_valid_mask.to(
+            device=x.device,
+            dtype=torch.bool,
+        )
+
+        u = idx[:, 0, :]  # (B, N)
+        v = idx[:, 1, :]  # (B, N)
+
+        # normalize coordinates to [-1, 1]
+        u_norm = (2.0 * u + 1.0) / Wf - 1.0
+        v_norm = (2.0 * v + 1.0) / Hf - 1.0
+
+        sampling_grid = torch.stack(
+            [u_norm, v_norm],
+            dim=-1,
+        ).unsqueeze(1)  # (B, 1, N, 2)
+
+        sampling_grid = sampling_grid.to(dtype=x.dtype)
+
+        gathered = nn.functional.grid_sample(
+            x,
+            sampling_grid,
+            mode='bilinear',
+            padding_mode='zeros',
+            align_corners=False,
+        )  # (B, C, 1, N)
+
+        gathered = gathered.squeeze(2)  # (B, C, N)
+
+        gathered = gathered * valid.unsqueeze(1).to(
+            dtype=gathered.dtype
+        )
+
+        voxel_feats = gathered.reshape(
+            B,
+            C,
+            self.num_grids_x,
+            self.num_grids_y,
+            self.num_grids_z,
+        )
+
+        # (B, C, Nx, Ny, Nz) -> (B, C, Nx, Nz, Ny)
+        voxel_feats = voxel_feats.permute(
+            0, 1, 2, 4, 3
+        ).contiguous()
+
+        voxel_mask = valid.reshape(
+            B,
+            self.num_grids_x,
+            self.num_grids_y,
+            self.num_grids_z,
+        )
+
+        voxel_mask = voxel_mask.permute(
+            0, 1, 3, 2
+        ).unsqueeze(1).contiguous()
+
+        return voxel_feats, voxel_mask
