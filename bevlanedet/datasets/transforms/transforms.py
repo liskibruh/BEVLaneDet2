@@ -303,9 +303,121 @@ class GenerateLaneTargets(BaseTransform):
         
         return results
 
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def visualize_occupancy(
+    occupancy,
+    save_path,
+    x_range=None,
+    y_range=None,
+    z_range=None,
+    title="3D Lane Occupancy",
+    elev=20,
+    azim=-55
+):
+    import matplotlib.pyplot as plt
+    """
+    occupancy layout: (Longitudinal, Vertical, Lateral)
+    Expected shape: (200, 28, 48)
+
+    Visualization layout: (Longitudinal, Lateral, Vertical)
+    """
+
+    occupancy = np.asarray(occupancy)
+
+    assert occupancy.shape == (200, 28, 48), \
+        f"Expected (200, 28, 48), got {occupancy.shape}"
+
+    # Transpose from (X, Z, Y) to (X, Y, Z)
+    filled = np.transpose(occupancy > 0, (0, 2, 1))
+
+    nx, ny, nz = filled.shape
+
+    num_occupied = np.count_nonzero(filled)
+
+    if num_occupied == 0:
+        print("No occupied voxels found!")
+        return
+
+    # Coordinate edges
+    def make_edges(axis_range, n):
+        if axis_range is not None:
+            return np.linspace(axis_range[0], axis_range[1], n + 1)
+        return np.arange(n + 1)
+
+    x_edges = make_edges(x_range, nx)
+    y_edges = make_edges(y_range, ny)
+    z_edges = make_edges(z_range, nz)
+
+    # Create 3D coordinate grids
+    X, Y, Z = np.meshgrid(
+        x_edges,
+        y_edges,
+        z_edges,
+        indexing='ij'
+    )
+
+    fig = plt.figure(figsize=(16, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Render occupied voxels as solid cubes
+    ax.voxels(
+        X, Y, Z,
+        filled,
+        facecolors='royalblue',
+        edgecolor='black',
+        linewidth=0.15,
+        shade=True
+    )
+
+    ax.set_xlabel("Longitudinal (m)" if x_range else "Longitudinal (voxel)")
+    ax.set_ylabel("Lateral (m)" if y_range else "Lateral (voxel)")
+    ax.set_zlabel("Vertical (m)" if z_range else "Vertical (voxel)")
+
+    ax.set_title(
+        f"{title}\nOccupied voxels: {num_occupied}",
+        pad=20
+    )
+
+    # Physical aspect ratio
+    ax.set_box_aspect((
+        x_edges[-1] - x_edges[0],
+        y_edges[-1] - y_edges[0],
+        z_edges[-1] - z_edges[0]
+    ))
+
+    ax.view_init(elev=elev, azim=azim)
+    ax.set_proj_type('ortho')
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+
+    # Report occupied voxel distribution
+    indices = np.argwhere(filled)
+
+    print(f"Occupied voxels: {num_occupied}")
+    print(
+        f"Longitudinal voxel range: "
+        f"{indices[:, 0].min()} - {indices[:, 0].max()}"
+    )
+    print(
+        f"Lateral voxel range: "
+        f"{indices[:, 1].min()} - {indices[:, 1].max()}"
+    )
+    print(
+        f"Vertical voxel range: "
+        f"{indices[:, 2].min()} - {indices[:, 2].max()}"
+    )
+
+    print(f"Saved visualization: {save_path}")
+
 @TRANSFORMS.register_module()
-class GenerateOccupancyTargets(BaseTransform):
-    def __init__(self, x_range, y_range, z_range, grid_res, z_vox_pad=2, y_vox_pad=3):
+class GenerateOccupancyTargets_UnOptim(BaseTransform):
+    def __init__(self, x_range, y_range, z_range, grid_res, z_vox_pad=3, y_vox_pad=3):
         self.x_range = x_range
         self.y_range = y_range
         self.z_range = z_range
@@ -313,15 +425,15 @@ class GenerateOccupancyTargets(BaseTransform):
         self.z_vox_pad = z_vox_pad
         self.y_vox_pad = y_vox_pad
         
-        self.vox_length = int((self.x_range[1] - self.x_range[0]) / grid_res[0])
-        self.vox_width = int((self.y_range[1] - self.y_range[0]) / grid_res[1])
-        self.vox_height = int((self.z_range[1] - self.z_range[0]) / grid_res[2])
+        self.vox_length = int((self.x_range[1] - self.x_range[0]) / self.grid_res[0])
+        self.vox_width = int((self.y_range[1] - self.y_range[0]) / self.grid_res[1])
+        self.vox_height = int((2*self.z_range) / self.grid_res[2])
     
     def pts_to_voxel_indices(self, lane_points):
         
         x_min, x_max = self.x_range
         y_min, y_max = self.y_range
-        z_min, z_max = self.z_range
+        z_min, z_max = -self.z_range, self.z_range
         
         valid = (
             (lane_points[:, 0] >= x_min) & (lane_points[:, 0] <= x_max) &
@@ -347,11 +459,16 @@ class GenerateOccupancyTargets(BaseTransform):
         lanes_ground = results['laneLines']
         
         occupancy = np.zeros((self.vox_length, self.vox_height, self.vox_width), dtype=np.uint8)
+        # occupancy = -np.ones((self.vox_length, self.vox_height, self.vox_width), dtype=np.int8)
         
         for idx in range(len(lanes_ground)):
-            visibility = results['laneLines_visibility'][idx]
+            visibility = np.array(results['laneLines_visibility'][idx])
             lane_ground = np.array(lanes_ground[idx])
             lane_ground = lane_ground[visibility>0.5]      # (M, 3)
+            
+            # ApolloSim: [lateral, longitudinal, vertical]
+            # Voxelizer:  [longitudinal, lateral, vertical]
+            lane_ground = lane_ground[:, [1, 0, 2]]
             
             voxel_indices = self.pts_to_voxel_indices(lane_ground)
             # voxel_indices = voxel_indices[:, [0, 2, 1]]     # XYZ -> XZY
@@ -363,21 +480,211 @@ class GenerateOccupancyTargets(BaseTransform):
             occupancy[x, z, y] = 1      # notice the axis-flip (XYZ -> XZY)
             
             # cuboid padding in Y-Z planes
-            for dy in range(-self.y_vox_pad, self.y_vox_pad + 1):
-                for dz in range(-self.z_vox_pad, self.z_vox_pad + 1):
-                    
-                    y_pad = y + dy
-                    z_pad = z + dz
-                    
-                    valid = (
-                        (y_pad >= 0) & (y_pad <= self.vox_width) &
-                        (z_pad >= 0) & (z_pad <= self.vox_height)
-                    )
-                    
-                    occupancy[x[valid], z_pad[valid], y_pad[valid]] = 1
+            x_vox_pad=3
+            for dx in range(-x_vox_pad, x_vox_pad + 1):
+                for dy in range(-self.y_vox_pad, self.y_vox_pad + 1):
+                    for dz in range(-self.z_vox_pad, self.z_vox_pad + 1):
+                        
+                        x_pad = x + dx
+                        y_pad = y + dy
+                        z_pad = z + dz
+                        
+                        valid = (
+                            (x_pad >= 0) & (x_pad < 200) &
+                            (y_pad >= 0) & (y_pad < self.vox_width) &
+                            (z_pad >= 0) & (z_pad < self.vox_height)
+                        )
+                        
+                        # occupancy[x[valid], z_pad[valid], y_pad[valid]] = 1
+                        occupancy[x_pad[valid], z_pad[valid], y_pad[valid]] = 1
             
         results['bev_gt_occ'] = occupancy
+                
+        import string
+        import random
+        import os
         
+        chars = string.ascii_letters + string.digits
+        
+        random_str = ''.join(random.choices(chars, k=5))
+        imname = f"occ_vis_{random_str}.png"
+        save_dir = "C:\\Users\\oo_wa\\Downloads\\python_scripts\\BEVLaneDet2\\tools\\misc\\"
+        save_path = os.path.join(save_dir, imname)
+        
+        visualize_occupancy(
+            occupancy=occupancy,
+            save_path=save_path
+        )
+                
+        return results
+
+@TRANSFORMS.register_module()
+class GenerateOccupancyTargets(BaseTransform):
+    def __init__(
+        self,
+        x_range,
+        y_range,
+        z_range,
+        grid_res,
+        x_vox_pad=3,
+        y_vox_pad=3,
+        z_vox_pad=3
+    ):
+
+        self.x_range = x_range
+        self.y_range = y_range
+        self.z_range = z_range
+        self.grid_res = grid_res
+
+        self.x_vox_pad = x_vox_pad
+        self.y_vox_pad = y_vox_pad
+        self.z_vox_pad = z_vox_pad
+
+        self.vox_length = int(
+            (x_range[1] - x_range[0]) / grid_res[0]
+        )
+
+        self.vox_width = int(
+            (y_range[1] - y_range[0]) / grid_res[1]
+        )
+
+        self.vox_height = int(
+            (2 * z_range) / grid_res[2]
+        )
+
+        # precompute all padding offsets
+        dx, dy, dz = np.meshgrid(
+            np.arange(-x_vox_pad, x_vox_pad + 1),
+            np.arange(-y_vox_pad, y_vox_pad + 1),
+            np.arange(-z_vox_pad, z_vox_pad + 1),
+            indexing='ij'
+        )
+
+        self.padding_offsets = np.stack(
+            [dx.ravel(), dy.ravel(), dz.ravel()],
+            axis=1
+        ).astype(np.int32)
+
+
+    def pts_to_voxel_indices(self, lane_points):
+
+        x_min, x_max = self.x_range
+        y_min, y_max = self.y_range
+        z_min, z_max = -self.z_range, self.z_range
+
+        valid = (
+            (lane_points[:, 0] >= x_min) &
+            (lane_points[:, 0] < x_max) &
+            (lane_points[:, 1] >= y_min) &
+            (lane_points[:, 1] < y_max) &
+            (lane_points[:, 2] >= z_min) &
+            (lane_points[:, 2] < z_max)
+        )
+
+        lane_points = lane_points[valid]
+
+        if len(lane_points) == 0:
+            return np.empty((0, 3), dtype=np.int32)
+
+        voxel_xyz = np.floor(
+            (lane_points - np.array([x_min, y_min, z_min]))
+            / np.array(self.grid_res)
+        ).astype(np.int32)
+
+        return voxel_xyz
+
+
+    def transform(self, results):
+
+        lanes_ground = results['laneLines']
+
+        occupancy = np.zeros(
+            (
+                self.vox_length,
+                self.vox_height,
+                self.vox_width
+            ),
+            dtype=np.uint8
+        )
+
+        all_voxel_indices = []
+
+        for idx in range(len(lanes_ground)):
+
+            visibility = np.asarray(
+                results['laneLines_visibility'][idx]
+            )
+
+            lane_ground = np.asarray(lanes_ground[idx])
+
+            lane_ground = lane_ground[visibility > 0.5]
+
+            if len(lane_ground) == 0:
+                continue
+
+            # ApolloSim: [lateral, longitudinal, vertical]
+            # Voxelizer:  [longitudinal, lateral, vertical]
+            lane_ground = lane_ground[:, [1, 0, 2]]
+
+            voxel_indices = self.pts_to_voxel_indices(
+                lane_ground
+            )
+
+            if len(voxel_indices) > 0:
+                all_voxel_indices.append(voxel_indices)
+
+        if not all_voxel_indices:
+            results['gt_occ'] = occupancy
+            return results
+
+        voxel_indices = np.concatenate(
+            all_voxel_indices,
+            axis=0
+        )
+
+        padded_indices = (
+            voxel_indices[:, None, :] +
+            self.padding_offsets[None, :, :]
+        )
+
+        valid = (
+            (padded_indices[:, :, 0] >= 0) &
+            (padded_indices[:, :, 0] < self.vox_length) &
+            (padded_indices[:, :, 1] >= 0) &
+            (padded_indices[:, :, 1] < self.vox_width) &
+            (padded_indices[:, :, 2] >= 0) &
+            (padded_indices[:, :, 2] < self.vox_height)
+        )
+
+        padded_indices = padded_indices[valid]
+
+        # XYZ -> XZY occupancy assignment
+        x = padded_indices[:, 0]
+        y = padded_indices[:, 1]
+        z = padded_indices[:, 2]
+
+        occupancy[x, z, y] = 1
+        # valid_occ_mask = occupancy > 0
+
+        results['gt_occ'] = occupancy
+        # results['gt_valid_occ_mask'] = valid_occ_mask
+        
+        # import string
+        # import random
+        # import os
+        
+        # chars = string.ascii_letters + string.digits
+        
+        # random_str = ''.join(random.choices(chars, k=5))
+        # imname = f"occ_vis_{random_str}.png"
+        # save_dir = "C:\\Users\\oo_wa\\Downloads\\python_scripts\\BEVLaneDet2\\tools\\misc\\"
+        # save_path = os.path.join(save_dir, imname)
+        
+        # visualize_occupancy(
+        #     occupancy=occupancy,
+        #     save_path=save_path
+        # )
+
         return results
             
 
@@ -1013,6 +1320,12 @@ class PackLaneDataVox(BaseTransform):
         
         if bev_fields:
             data_sample.bev_gt = PixelData(**bev_fields)
+        
+        # OCC targets
+        if 'gt_occ' in results:
+            occ_gt = BaseDataElement()
+            occ_gt.gt_occ = to_tensor(results['gt_occ'][None, ...].copy())
+            data_sample.gt_occ = occ_gt
         
         # meta
         meta = {}

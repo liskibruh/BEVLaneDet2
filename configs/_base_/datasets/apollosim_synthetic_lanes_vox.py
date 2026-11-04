@@ -33,6 +33,15 @@ train_pipeline = [
         vc_config=vc_config
         ),
     dict(
+        type="GenerateOccupancyTargets",
+        x_range=x_range,
+        y_range=y_range,
+        z_range=z_range,
+        grid_res=(meter_per_pixel, meter_per_pixel, meter_per_pixel),
+        z_vox_pad=10,
+        y_vox_pad=5
+    ),
+    dict(
         type="Voxel_Generator_Cont", 
         base_height=base_height,
         z_range=z_range,

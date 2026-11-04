@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 *.pyd
 *.pth
+*.png
 
 /data
 /work_dirs*
