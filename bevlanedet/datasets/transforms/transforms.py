@@ -1252,6 +1252,98 @@ class PackLaneData(BaseTransform):
 
 
 @TRANSFORMS.register_module()
+class PackLaneDataVoxOcc(BaseTransform):
+    """
+    Pack inputs for the model.
+    
+    Returns a dict:
+    - 'inputs': image as a (C, H, W) tensor
+    - 'data_samples': a BaseDataElement with:
+        - image_gt  (PixelData): front-view segmentation target (image_gt)
+        - bev_gt    (PixelData): BEV targets (bev_gt, bev_y_offset_map, bev_z_map)
+        - metainfo: meta_keys, plus camera params (K, ground2cam)
+    """
+    
+    default_meta_keys = [
+        'raw_file', 'cam_height', 'cam_pitch', 'sample_idx',
+        'img_path', 'ori_shape', 'img_shape', 'image_gt_shape',
+        'bev_gt_shape', 'ground2cam', 'K', 'gt_lanes' 
+    ]
+    
+    def __init__(self, meta_keys=default_meta_keys):
+        self.meta_keys = meta_keys
+    
+    def transform(self, results):
+        
+        packed_results = {}
+        
+        # ground-truth targets
+        img = results['img']
+        
+        if not img.flags.c_contiguous:
+            img = np.ascontiguousarray(img.transpose(2, 0, 1))
+            img = to_tensor(img)
+        else:
+            img = to_tensor(img).permute(2, 0, 1).contiguous()
+        
+        packed_results['inputs'] = {'img': img}
+        if results.get('voxels_info', None) is not None:
+            voxels_info = results['voxels_info']
+            packed_results['inputs']['voxel_proj_index'] = voxels_info['voxel_uv_idx']
+            packed_results['inputs']['voxel_valid_mask'] = voxels_info['voxel_valid_mask']
+        
+        data_sample = BaseDataElement()
+        
+        # FV target
+        if 'image_gt_segment' in results:
+            image_gt_segment = PixelData(
+                sem_seg=to_tensor(results['image_gt_segment'][None, ...].copy())
+            )
+        if 'image_gt_instance' in results:
+            image_gt_instance = PixelData(
+                instance_seg=to_tensor(results['image_gt_instance'][None, ...].copy())
+            )
+        
+        data_sample.image_gt_segment = image_gt_segment
+        data_sample.image_gt_instance = image_gt_instance
+        
+        # BEV targets
+        bev_fields = {}
+        if 'bev_gt_segment' in results:
+            bev_fields['sem_seg'] = to_tensor(results['bev_gt_segment'][None, ...].copy())
+        if 'bev_gt_instance' in results:
+            bev_fields['instance_seg'] = to_tensor(results['bev_gt_instance'][None, ...].copy())
+        if 'bev_y_offset_map' in results:
+            bev_fields['y_offset_map'] = to_tensor(results['bev_y_offset_map'][None, ...].copy())
+        if 'bev_z_map' in results:
+            bev_fields['z_map'] = to_tensor(results['bev_z_map'][None, ...].copy())
+        
+        if bev_fields:
+            data_sample.bev_gt = PixelData(**bev_fields)
+        
+        # OCC targets
+        if 'gt_occ' in results:
+            occ_gt = BaseDataElement()
+            occ_gt.gt_occ = to_tensor(results['gt_occ'][None, ...].copy())
+            data_sample.gt_occ = occ_gt
+        
+        # meta
+        meta = {}
+        for key in self.meta_keys:
+            if key in results:
+                if key in ('K', 'ground2cam'):
+                    mat = to_tensor(results[key].copy())
+                    meta[key] = mat
+                else:
+                    meta[key] = results[key]
+        
+        data_sample.set_metainfo(meta)
+        
+        packed_results['data_samples'] = data_sample
+        
+        return packed_results
+
+@TRANSFORMS.register_module()
 class PackLaneDataVox(BaseTransform):
     """
     Pack inputs for the model.

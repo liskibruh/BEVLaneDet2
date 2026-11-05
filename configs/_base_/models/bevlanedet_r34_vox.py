@@ -47,13 +47,6 @@ model = dict(
         ),
         init_cfg=None
     ),
-    lane_occ_head=dict(
-        type="BinOccHead",
-        in_channels=64,
-        hidden_channels=64,
-        num_z=int((2*z_range) / meter_per_pixel),
-        init_cfg=None
-    ),
     bev_lane_head=dict(
         type="BEVLaneHeadVoxMod",
         output_size=bev_shape,
@@ -97,14 +90,6 @@ model = dict(
         type='MSELoss',
         reduction='mean',
         loss_weight=1.0
-    ),
-    loss_occ=dict(
-        type='FocalLoss',
-        use_sigmoid=True,
-        gamma=2.0,
-        alpha=0.50,
-        reduction='none',
-        loss_weight=0.5
     ),
     # loss weights
     bev_loss_seg_weight=3,
