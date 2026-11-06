@@ -95,7 +95,7 @@ class LearnedHeightCompression(nn.Module):
         
         return self.compress(feats)
 
-class GlobalSpatialRelationModule(nn.Module):
+class SimpleSpatialLinear(nn.Module):
     def __init__(self, in_shape, out_shape, in_ch, context_ch, out_ch):
         super().__init__()
         
@@ -153,3 +153,55 @@ class GlobalSpatialRelationModule(nn.Module):
         combined = torch.concat([bev_feats, spatial_feats], dim=1)
         
         return self.fuse(combined)
+
+class SimpleSpatialLinear2(nn.Module):
+    def __init__(self, in_shape, in_channels, context_ch=8, out_channels=64):
+        super().__init__()
+
+        in_planes = in_shape[0] * in_shape[1]
+        out_planes = (in_shape[0] // 2) * (in_shape[1] // 2)
+
+        self.spatial = nn.Sequential(
+            nn.Linear(in_planes, out_planes),
+            nn.ReLU()
+        )
+
+        self.downsample = nn.Sequential(
+            nn.Conv2d(in_channels, context_ch, kernel_size=1),
+            nn.BatchNorm2d(context_ch)
+        )
+
+        self.pointwise = nn.Sequential(
+            nn.Conv2d(context_ch, context_ch, kernel_size=1),
+            nn.BatchNorm2d(context_ch)
+        )
+        
+        self.final_conv = nn.Sequential(
+            nn.Conv2d(in_channels+context_ch, out_channels, kernel_size=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU()
+        )
+
+    def forward(self, bev_feats):
+        B, C, H, W = bev_feats.shape
+
+        x = bev_feats.reshape(B, C, -1).to(device=bev_feats.device, dtype=bev_feats.dtype)
+        x = self.spatial(x)
+        x = x.reshape(B, C, H // 2, W // 2)
+
+        x = self.downsample(x)
+
+        x = nn.functional.interpolate(
+            x,
+            size=(H, W),
+            mode='bilinear',
+            align_corners=False
+        )
+
+        x = self.pointwise(x)
+        
+        x = torch.cat([bev_feats, x], dim=1)
+        
+        x = self.final_conv(x)
+
+        return x
