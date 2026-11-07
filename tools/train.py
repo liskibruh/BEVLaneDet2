@@ -62,19 +62,19 @@ def main():
         
         runner.resume(filename=args.resume)
     
-    # model = runner.model
+    model = runner.model
     
-    # total_params = sum(p.numel() for p in model.parameters())
-    # train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    # print(f"Total parameters:     {total_params:,} ({total_params / 1e6:.2f} M)")
-    # print(f"Trainable parameters: {train_params:,} ({train_params / 1e6:.2f} M)")
-    # print(f"Frozen parameters:    {total_params - train_params:,}")
+    print(f"Total parameters:     {total_params:,} ({total_params / 1e6:.2f} M)")
+    print(f"Trainable parameters: {train_params:,} ({train_params / 1e6:.2f} M)")
+    print(f"Frozen parameters:    {total_params - train_params:,}")
     
-    # exit()
+    exit()
 
     # Start training
-    runner.train()
+    # runner.train()
 
 
 if __name__ == '__main__':

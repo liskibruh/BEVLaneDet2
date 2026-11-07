@@ -11,7 +11,7 @@ test_cfg = dict(type=TestLoop)
 
 train_bs = 4        # must match train_dataloader batch_size (single GPU, so no multiplier)
 orig_bs = 8         # <- original implementation's batch size
-base_lr = 1e-3 * train_bs / orig_bs   # 5e-4 with these values
+base_lr = 1.5e-3 * train_bs / orig_bs   # 5e-4 with these values
 
 optim_wrapper = dict(
     type='OptimWrapper',

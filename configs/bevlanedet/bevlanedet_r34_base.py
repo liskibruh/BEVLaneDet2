@@ -4,7 +4,8 @@ with read_base():
     # from .._base_.datasets.apollosim_synthetic_lanes import *
     from .._base_.datasets.apollosim_synthetic_lanes_vox import *
     # from .._base_.models.bevlanedet_r34 import *
-    from .._base_.models.bevlanedet_r34_vox import *
+    # from .._base_.models.bevlanedet_r34_vox import *
+    from .._base_.models.bevlanedet_r34_vox_upscale import *
     # from .._base_.models.bevlanedet_r34_mod import *
     from .._base_.schedulers.schedule_2x import *
     from .._base_.default_runtime import *
@@ -19,6 +20,12 @@ custom_imports = dict(
 )
 
 work_dir = './work_dirs_train/bevlanedet_temp'
+
+randomness = dict(
+    seed=42, 
+    # diff_rank_seed=True,  # ensures different seeds per GPU if doing multi-GPU training
+    deterministic=False     # Forces deterministic cuDNN execution algorithms
+)
 
 # load_from = "./work_dirs_train/bevlandet_base/epoch_10.pth"
 
