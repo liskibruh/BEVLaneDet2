@@ -97,7 +97,7 @@ train_dataloader = dict(
 val_dataloader = dict(
     batch_size=4,
     num_workers=2,
-    shuffle=False,
+    shuffle=True,
     dataset=dict(
         type=dataset,
         data_root=data_root,
@@ -108,10 +108,13 @@ val_dataloader = dict(
 )
 
 val_evaluator = dict(
-    type="LaneEval",
+    type="LaneEvalVis",
     post_conf=0.9,
     post_emb_margin=6.0,
     post_min_cluster_size=15,
     x_range=x_range,
     meter_per_pixel=meter_per_pixel,
+    data_root=data_root,
+    visualize=True,
+    vis_max_num=50,
 )

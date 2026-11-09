@@ -917,7 +917,7 @@ class BEVLaneDetVoxUpscaled(BaseDetector):
         pred_z        = bev_out[3].detach().cpu()
         
         
-        for idx, sample in enumerate(data_samples):
+        for idx, sample in enumerate(data_samples):            
             sample.bev_pred = {
                 'pred_seg': pred_seg[idx].unsqueeze(0),
                 'pred_emb': pred_emb[idx].unsqueeze(0),

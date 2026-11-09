@@ -27,7 +27,7 @@ randomness = dict(
     deterministic=False     # Forces deterministic cuDNN execution algorithms
 )
 
-# load_from = "./work_dirs_train/bevlandet_base/epoch_10.pth"
+load_from = r"C:\Users\oo_wa\Downloads\python_scripts\BEVLaneDet2\checkpoints\bevlanedet_r34_vox_exp6.pth"
 
 # val_cfg = None
 # val_evaluator = None
@@ -36,3 +36,9 @@ randomness = dict(
 # test_cfg = None
 test_evaluator = val_evaluator
 test_dataloader = val_dataloader
+
+visualizer = dict(
+    type='Visualizer',
+    name='visualizer',
+    vis_backends=[dict(type='LocalVisBackend')],
+)

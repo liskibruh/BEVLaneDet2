@@ -246,6 +246,7 @@ class GenerateLaneTargets(BaseTransform):
             H = sc.get_H(height=0)
             image = cv2.warpPerspective(image, H, self.vc_config.vc_im_shape)
             image_gt = cv2.warpPerspective(image_gt, H, self.vc_config.vc_im_shape)
+            results['H_vc'] = H
         
         # debug
         # print(f"iamge_gt.shape: {image_gt.shape}")
@@ -297,8 +298,7 @@ class GenerateLaneTargets(BaseTransform):
         results['ground2cam'] = ground2cam
         results['cam2ground'] = cam2ground
         results['ground2ipm'] = ground2ipm
-        results['H_vc'] = H
-        
+                
         results['K'] = self.K
         
         return results
@@ -1359,7 +1359,7 @@ class PackLaneDataVox(BaseTransform):
     default_meta_keys = [
         'raw_file', 'cam_height', 'cam_pitch', 'sample_idx',
         'img_path', 'ori_shape', 'img_shape', 'image_gt_shape',
-        'bev_gt_shape', 'ground2cam', 'K', 'gt_lanes' 
+        'bev_gt_shape', 'ground2cam', 'H_vc', 'K', 'gt_lanes' 
     ]
     
     def __init__(self, meta_keys=default_meta_keys):
@@ -1423,7 +1423,7 @@ class PackLaneDataVox(BaseTransform):
         meta = {}
         for key in self.meta_keys:
             if key in results:
-                if key in ('K', 'ground2cam'):
+                if key in ('K', 'ground2cam', 'H_vc'):
                     mat = to_tensor(results[key].copy())
                     meta[key] = mat
                 else:

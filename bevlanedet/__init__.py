@@ -5,10 +5,10 @@ from .models.data_preprocessors import CustomDataPreprocessor
 from .models.heads import InstanceEmbedding, FVLaneHead, InstanceEmbeddingWithOffset, BEVLaneHead, BEVLaneHeadVoxMod, BinOccHead
 from .models.losses import SoftIOULoss, NDPushPullLoss
 from .datasets.apollosim_lanes import ApolloSimDataset
-from .evaluation import LaneEval
+from .evaluation import LaneEval, LaneEvalVis
 
 __all__ = ["BEVLaneDet", "BEVLaneDetVox", "FCTransform_", "InstanceEmbedding", "FVLaneHead",
            "InstanceEmbeddingWithOffset", "BEVLaneHead", "BEVLaneHeadVoxMod", "ApolloSimDataset", 
-           "SoftIOULoss", "NDPushPullLoss", "LaneEval", "CustomDataPreprocessor", 
+           "SoftIOULoss", "NDPushPullLoss", "LaneEval", "LaneEvalVis", "CustomDataPreprocessor", 
            "ExplicitVoxelProjection", "ExplicitVoxelProjectionBilinear", "FCTransform_Mod", "BEVLaneDetMod", 
            "ResNet_HeightAware", "BEVLaneDetVoxOcc", "BinOccHead"]

@@ -1,12 +1,16 @@
 # code taken from
 #   https://github.com/Arche-Logos/bev_lane_det/blob/main/utils/util_val/val_offical.py#L8
 
+import os
+import cv2
+import copy
 import numpy as np
 from ..utils.cluster import embedding_post
 from ..utils.MinCostFlow import SolveMinCostFlow
 from ..utils.common_utils import prune_3d_lane_by_range, resample_laneline_in_y
 from .utils.post_process_utils import bev_instance2points_with_offset_z
 
+from mmengine.visualization import Visualizer
 from mmengine.evaluator import BaseMetric
 from mmdet.registry import METRICS
 
@@ -274,5 +278,346 @@ class LaneEval(BaseMetric):
         
         for res in results:
             self.bench_all(res['pred_lines'], res['gt_lines'])
+        
+        return self.show()
+
+@METRICS.register_module()
+class LaneEvalVis(BaseMetric):
+    def __init__(self,
+                post_conf=0.9,
+                post_emb_margin=6.0,
+                post_min_cluster_size=15,
+                x_range=(3, 103),
+                meter_per_pixel=0.5,
+                collect_device='cpu',
+                prefix=None,
+                visualize=False,
+                data_root="./data/Apollo_Sim_3D_Lane_Release/",
+                vis_max_num=10):
+        
+        super().__init__(collect_device=collect_device, prefix=prefix)
+        
+        self.x_range = x_range
+        self.meter_per_pixel = meter_per_pixel
+        self.post_conf = post_conf
+        self.post_emb_margin = post_emb_margin
+        self.post_min_cluster_size = post_min_cluster_size
+        
+        self.x_min = -10
+        self.x_max = 10
+        self.y_min = 3
+        self.y_max = 103
+        self.y_samples = np.linspace(self.y_min, self.y_max, num=100, endpoint=False)
+        self.dist_th = 1.5
+        self.ratio_th = 0.75
+        self.close_range = 40
+        self.laneline_x_error_close = []
+        self.laneline_x_error_far = []
+        self.laneline_z_error_close = []
+        self.laneline_z_error_far = []
+        self.r_list = []
+        self.p_list =[]
+        self.cnt_gt_list = []
+        self.cnt_pred_list = []
+        
+        self.data_root = data_root
+        self.visualize=visualize
+        self.vis_max_num = vis_max_num
+    
+    def process(self, data_batch, data_samples):
+        Ks, ground2cams = [], []
+        for sample in data_samples:
+            pred = (sample['bev_pred']['pred_seg'].detach().cpu().numpy(), sample['bev_pred']['pred_emb'].detach().cpu().numpy())
+            pred_offset_y = sample['bev_pred']['pred_offset_y'][0][0].detach().cpu().numpy()
+            pred_z = sample['bev_pred']['pred_z'][0][0].detach().cpu().numpy()
+            
+            canvas, ids = embedding_post(pred, 
+                                         self.post_conf, 
+                                         emb_margin=self.post_emb_margin, 
+                                         min_cluster_size=self.post_min_cluster_size, 
+                                         canvas_color=False)
+            
+            _pred_lines = bev_instance2points_with_offset_z(canvas, 
+                                                            max_x=self.x_range[1], 
+                                                            ms_per_pixel=(self.meter_per_pixel, self.meter_per_pixel), 
+                                                            offset_y=pred_offset_y, 
+                                                            Z=pred_z)
+            
+            pred_lines = []
+            for lane in _pred_lines:
+                pred_lane = np.array([-1*lane[1], lane[0], lane[2]])
+                y = np.linspace(min(pred_lane[1]), max(pred_lane[1]), 40)
+                f_x = np.polyfit(pred_lane[1], pred_lane[0], 3)
+                f_z = np.polyfit(pred_lane[1], pred_lane[2], 3)
+                pred_lane = np.array([np.poly1d(f_x)(y), y, np.poly1d(f_z)(y)])
+                pred_lines.append(pred_lane.T.tolist())
+             
+            gt_lines = sample['gt_lanes']
+            
+            
+            self.results.append({
+                'raw_file': sample['raw_file'],
+                'gt_lines': gt_lines,
+                'pred_lines': pred_lines,
+                'K': sample['K'],
+                'ground2cam': sample['ground2cam'],
+                'H_vc': sample['H_vc']
+            })
+    
+    def bench(self, pred_lanes, gt_lanes):
+        """
+            Matching predicted lanes and ground-truth lanes in their IPM projection, ignoring z attributes.
+            x error, y_error, and z error are all considered, although the matching does not rely on z
+            The input of prediction and ground-truth lanes are in ground coordinate, x-right, y-forward, z-up
+            The fundamental assumption is: 1. there are no two points from different lanes with identical x, y
+                                              but different z's
+                                           2. there are no two points from a single lane having identical x, y
+                                              but different z's
+            If the interest area is within the current drivable road, the above assumptions are almost always valid.
+
+        :param pred_lanes: N X 2 or N X 3 lists depending on 2D or 3D
+        :param gt_lanes: N X 2 or N X 3 lists depending on 2D or 3D
+        :param raw_file: file path rooted in dataset folder
+        :param gt_cam_height: camera height given in ground-truth loader
+        :param gt_cam_pitch: camera pitch given in ground-truth loader
+        :return:
+        """
+        # change this properly
+        close_range_idx = np.where(self.y_samples > self.close_range)[0][0]
+
+        r_lane, p_lane, c_lane = 0., 0., 0.
+        x_error_close = []
+        x_error_far = []
+        z_error_close = []
+        z_error_far = []
+
+        # only keep the visible portion
+        gt_lanes = [np.array(gt_lane) for k, gt_lane in
+                    enumerate(gt_lanes)]
+        gt_lanes = [lane for lane in gt_lanes if lane.shape[0] > 1]
+
+        # only consider those gt lanes overlapping with sampling range 有交集的部分
+        gt_lanes = [lane for lane in gt_lanes if lane[0, 1] < self.y_samples[-1] and lane[-1, 1] > self.y_samples[0]]
+
+        gt_lanes = [prune_3d_lane_by_range(np.array(lane), 3 * self.x_min, 3 * self.x_max) for lane in gt_lanes]
+
+        gt_lanes = [lane for lane in gt_lanes if lane.shape[0] > 1]
+
+        cnt_gt = len(gt_lanes)
+        cnt_pred = len(pred_lanes)
+
+        gt_visibility_mat = np.zeros((cnt_gt, 100))
+        pred_visibility_mat = np.zeros((cnt_pred, 100))
+
+        # resample gt and pred at y_samples
+        for i in range(cnt_gt):
+            min_y = np.min(np.array(gt_lanes[i])[:, 1])
+            max_y = np.max(np.array(gt_lanes[i])[:, 1])
+            x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(gt_lanes[i]), self.y_samples, out_vis=True)
+            gt_lanes[i] = np.vstack([x_values, z_values]).T
+            gt_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min, np.logical_and(x_values <= self.x_max,
+                                                     np.logical_and(self.y_samples >= min_y, self.y_samples <= max_y)))
+            gt_visibility_mat[i, :] = np.logical_and(gt_visibility_mat[i, :], visibility_vec)
+
+        for i in range(cnt_pred):
+            # # ATTENTION: ensure y mono increase before interpolation: but it can reduce size
+            # pred_lanes[i] = make_lane_y_mono_inc(np.array(pred_lanes[i]))
+            # pred_lane = prune_3d_lane_by_range(np.array(pred_lanes[i]), self.x_min, self.x_max)
+            min_y = np.min(np.array(pred_lanes[i])[:, 1])
+            max_y = np.max(np.array(pred_lanes[i])[:, 1])
+            x_values, z_values, visibility_vec = resample_laneline_in_y(np.array(pred_lanes[i]), self.y_samples, out_vis=True)
+            pred_lanes[i] = np.vstack([x_values, z_values]).T
+            pred_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min, np.logical_and(x_values <= self.x_max,
+                                                       np.logical_and(self.y_samples >= min_y, self.y_samples <= max_y)))
+            pred_visibility_mat[i, :] = np.logical_and(pred_visibility_mat[i, :], visibility_vec)
+            # pred_visibility_mat[i, :] = np.logical_and(x_values >= self.x_min, x_values <= self.x_max)
+
+        adj_mat = np.zeros((cnt_gt, cnt_pred), dtype=int)
+        cost_mat = np.zeros((cnt_gt, cnt_pred), dtype=int)
+        cost_mat.fill(1000)
+        num_match_mat = np.zeros((cnt_gt, cnt_pred), dtype=float)
+        x_dist_mat_close = np.zeros((cnt_gt, cnt_pred), dtype=float)
+        x_dist_mat_close.fill(1000.)
+        x_dist_mat_far = np.zeros((cnt_gt, cnt_pred), dtype=float)
+        x_dist_mat_far.fill(1000.)
+        z_dist_mat_close = np.zeros((cnt_gt, cnt_pred), dtype=float)
+        z_dist_mat_close.fill(1000.)
+        z_dist_mat_far = np.zeros((cnt_gt, cnt_pred), dtype=float)
+        z_dist_mat_far.fill(1000.)
+
+        # compute curve to curve distance
+        for i in range(cnt_gt):
+            for j in range(cnt_pred): #
+                x_dist = np.abs(gt_lanes[i][:, 0] - pred_lanes[j][:, 0])
+                z_dist = np.abs(gt_lanes[i][:, 1] - pred_lanes[j][:, 1])
+                euclidean_dist = np.sqrt(x_dist ** 2 + z_dist ** 2) #
+
+                # apply visibility to penalize different partial matching accordingly
+                euclidean_dist[np.logical_or(gt_visibility_mat[i, :] < 0.5, pred_visibility_mat[j, :] < 0.5)] = self.dist_th
+
+                # if np.average(euclidean_dist) < 2*self.dist_th: # don't prune here to encourage finding perfect match
+                num_match_mat[i, j] = np.sum(euclidean_dist < self.dist_th)
+                adj_mat[i, j] = 1
+                # ATTENTION: use the sum as int type to meet the requirements of min cost flow optimization (int type)
+                # using num_match_mat as cost does not work?
+                cost_mat[i, j] = np.sum(euclidean_dist).astype(int) #
+                # cost_mat[i, j] = num_match_mat[i, j]
+
+                # use the both visible portion to calculate distance error
+                both_visible_indices = np.logical_and(gt_visibility_mat[i, :] > 0.5, pred_visibility_mat[j, :] > 0.5)
+                if np.sum(both_visible_indices[:close_range_idx]) > 0:
+                    x_dist_mat_close[i, j] = np.sum(
+                        x_dist[:close_range_idx] * both_visible_indices[:close_range_idx]) / np.sum(
+                        both_visible_indices[:close_range_idx])
+                    z_dist_mat_close[i, j] = np.sum(
+                        z_dist[:close_range_idx] * both_visible_indices[:close_range_idx]) / np.sum(
+                        both_visible_indices[:close_range_idx])
+                else:
+                    x_dist_mat_close[i, j] = self.dist_th
+                    z_dist_mat_close[i, j] = self.dist_th
+
+                if np.sum(both_visible_indices[close_range_idx:]) > 0:
+                    x_dist_mat_far[i, j] = np.sum(
+                        x_dist[close_range_idx:] * both_visible_indices[close_range_idx:]) / np.sum(
+                        both_visible_indices[close_range_idx:])
+                    z_dist_mat_far[i, j] = np.sum(
+                        z_dist[close_range_idx:] * both_visible_indices[close_range_idx:]) / np.sum(
+                        both_visible_indices[close_range_idx:])
+                else:
+                    x_dist_mat_far[i, j] = self.dist_th
+                    z_dist_mat_far[i, j] = self.dist_th
+
+        # solve bipartite matching vis min cost flow solver
+        match_results = SolveMinCostFlow(adj_mat, cost_mat)
+        match_results = np.array(match_results)
+
+        # only a match with avg cost < self.dist_th is consider valid one
+        match_gt_ids = []
+        match_pred_ids = []
+        match_num = 0
+        if match_results.shape[0] > 0:
+            for i in range(len(match_results)):
+                if match_results[i, 2] < self.dist_th * self.y_samples.shape[0]:
+                    match_num += 1
+                    gt_i = match_results[i, 0]
+                    pred_i = match_results[i, 1]
+                    # consider match when the matched points is above a ratio
+                    if num_match_mat[gt_i, pred_i] / np.sum(gt_visibility_mat[gt_i, :]) >= self.ratio_th:
+                        r_lane += 1
+                        match_gt_ids.append(gt_i)
+                    if num_match_mat[gt_i, pred_i] / np.sum(pred_visibility_mat[pred_i, :]) >= self.ratio_th:
+                        p_lane += 1
+                        match_pred_ids.append(pred_i)
+                    # if pred_category != []:
+                    #     if pred_category[pred_i] == gt_category[gt_i] or (pred_category[pred_i]==20 and gt_category[gt_i]==21):
+                    #         c_lane += 1    # category matched num
+                    x_error_close.append(x_dist_mat_close[gt_i, pred_i])
+                    x_error_far.append(x_dist_mat_far[gt_i, pred_i])
+                    z_error_close.append(z_dist_mat_close[gt_i, pred_i])
+                    z_error_far.append(z_dist_mat_far[gt_i, pred_i])
+        return r_lane, p_lane, c_lane, cnt_gt, cnt_pred, match_num, x_error_close, x_error_far, z_error_close, z_error_far
+    
+    def bench_all(self, pred_lanes, gt_lanes):
+        r_lane, p_lane, c_lane, cnt_gt, cnt_pred, match_num, \
+        x_error_close, x_error_far, \
+        z_error_close, z_error_far = self.bench(pred_lanes,
+                                                gt_lanes)
+        # laneline_stats.append(np.array([r_lane, p_lane, c_lane, cnt_gt, cnt_pred, match_num]))
+        # consider x_error z_error only for the matched lanes
+        # if r_lane > 0 and p_lane > 0:
+        self.r_list.append(r_lane)
+        self.p_list.append(p_lane)
+        self.cnt_gt_list.append(cnt_gt)
+        self.cnt_pred_list.append(cnt_pred)
+        self.laneline_x_error_close.extend(x_error_close)
+        self.laneline_x_error_far.extend(x_error_far)
+        self.laneline_z_error_close.extend(z_error_close)
+        self.laneline_z_error_far.extend(z_error_far)
+    
+    def show(self):
+        r_lane = np.sum(self.r_list)
+        p_lane = np.sum(self.p_list)
+        cnt_gt = np.sum(self.cnt_gt_list)
+        cnt_pred = np.sum(self.cnt_pred_list)
+        Recall = r_lane / (cnt_gt + 1e-6)
+        Precision = p_lane / (cnt_pred + 1e-6)
+        f1_score = 2 * Recall * Precision / (Recall + Precision + 1e-6)
+        dict_res = {'x_error_close': np.average(self.laneline_x_error_close),
+                    'x_error_far':np.average(self.laneline_x_error_far),
+                    'z_error_close': np.average(self.laneline_z_error_close),
+                    'z_error_far': np.average(self.laneline_z_error_far),
+                    'recall': Recall,
+                    'precision':Precision,
+                    'f1_score':f1_score
+                    }
+        return dict_res
+    
+    def draw_lanes(self, visualizer, lines, K, ground2cam, H_vc, color, line_width):
+        us_all, vs_all = [], []
+        for lane in lines:
+            lane = np.asarray(lane, dtype=np.float64)       # float16 is too imprecise for projection
+            if lane.ndim != 2 or lane.shape[0] < 2:
+                continue
+
+            ones = np.ones((lane.shape[0], 1))
+            lane_h = np.concatenate((lane, ones), axis=1).T  # (4, N)
+            lane_cam = ground2cam[:3] @ lane_h               # (3, N); use [:3] in case it's 4x4
+            lane_img = K @ lane_cam                          # (3, N)
+            lane_img = H_vc @ lane_img
+
+            depth = lane_img[2]
+            ok = depth > 1e-3                                # drop points behind the camera
+            d = np.where(ok, depth, 1.0)
+            u, v = lane_img[0] / d, lane_img[1] / d
+
+            seg = ok[:-1] & ok[1:]                           # keep segments with both ends valid
+            if seg.any():
+                us_all.append(np.stack([u[:-1], u[1:]], axis=1)[seg])   # (K, 2)
+                vs_all.append(np.stack([v[:-1], v[1:]], axis=1)[seg])   # (K, 2)
+
+        if us_all:
+            visualizer.draw_lines(np.concatenate(us_all, axis=0),
+                                np.concatenate(vs_all, axis=0),
+                                colors=color, line_widths=line_width)
+    
+    def visualize_sample(self, img_path, res, K, ground2cam, visualizer):
+        if img_path and os.path.exists(img_path):
+            img = cv2.imread(img_path)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        else:
+            img = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        H_vc = res['H_vc'].numpy()
+        img = cv2.warpPerspective(img, H_vc, (img.shape[1], img.shape[0]))
+            
+        visualizer.set_image(img)
+    
+        self.draw_lanes(visualizer, res['gt_lines'], K, ground2cam, H_vc=H_vc, color='lime', line_width=3)
+        self.draw_lanes(visualizer, res['pred_lines'], K, ground2cam, H_vc=H_vc, color='red', line_width=3)
+            
+        drawn_img = visualizer.get_image()
+        
+        out_dir = os.path.join(self.data_root, 'vis_outs')
+        os.makedirs(out_dir, exist_ok=True)
+        name = "".join(res['raw_file'].replace('/', '_').split('_')[-1])
+
+        out_pth = os.path.join(out_dir, name)
+        cv2.imwrite(out_pth, drawn_img[..., ::-1])
+        
+    
+    def compute_metrics(self, results):
+        
+        visualizer = None
+        if self.visualize:
+            visualizer = Visualizer.get_current_instance()
+        
+        for idx, res in enumerate(results):
+
+            self.bench_all(copy.deepcopy(res['pred_lines']), res['gt_lines'])
+            
+            if visualizer is not None and idx < self.vis_max_num:
+                
+                img_path = os.path.join(self.data_root, res['raw_file'])
+                self.visualize_sample(img_path, res, np.array(res['K']), np.array(res['ground2cam']), visualizer)
         
         return self.show()
