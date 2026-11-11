@@ -27,7 +27,7 @@ randomness = dict(
     deterministic=False     # Forces deterministic cuDNN execution algorithms
 )
 
-load_from = r"C:\Users\oo_wa\Downloads\python_scripts\BEVLaneDet2\checkpoints\bevlanedet_r34_vox_exp6.pth"
+load_from = r"C:\Users\oo_wa\Downloads\python_scripts\BEVLaneDet2\checkpoints\bevlanedet_r34_vox_illusChg_exp1.pth"
 
 # val_cfg = None
 # val_evaluator = None

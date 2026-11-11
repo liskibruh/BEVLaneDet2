@@ -323,6 +323,17 @@ class LaneEvalVis(BaseMetric):
         self.data_root = data_root
         self.visualize=visualize
         self.vis_max_num = vis_max_num
+        
+    def reset_metrics(self):
+        self.laneline_x_error_close = []
+        self.laneline_x_error_far = []
+        self.laneline_z_error_close = []
+        self.laneline_z_error_far = []
+
+        self.r_list = []
+        self.p_list = []
+        self.cnt_gt_list = []
+        self.cnt_pred_list = []
     
     def process(self, data_batch, data_samples):
         Ks, ground2cams = [], []
@@ -606,6 +617,7 @@ class LaneEvalVis(BaseMetric):
         
     
     def compute_metrics(self, results):
+        self.reset_metrics()
         
         visualizer = None
         if self.visualize:
