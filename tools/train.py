@@ -62,14 +62,15 @@ def main():
         
         runner.resume(filename=args.resume)
     
-    # model = runner.model
+    model = runner.model
     
+    # total_fv_params = sum(p.numel() for p in model.fv_lane_head.parameters())
+    # total_bev_params = sum(p.numel() for p in model.bev_lane_head.parameters())
     # total_params = sum(p.numel() for p in model.parameters())
-    # train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     
-    # print(f"Total parameters:     {total_params:,} ({total_params / 1e6:.2f} M)")
-    # print(f"Trainable parameters: {train_params:,} ({train_params / 1e6:.2f} M)")
-    # print(f"Frozen parameters:    {total_params - train_params:,}")
+    # print(f"fv_params: {total_fv_params / 1e6:.2f} M")
+    # print(f"bev_params: {total_bev_params / 1e6:.2f} M")
+    # print(f"total_params: {total_params / 1e6:.2f} M")
     
     # exit()
 
