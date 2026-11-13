@@ -8,6 +8,7 @@ from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCo
 from mmengine.model import kaiming_init, constant_init, Sequential
 from mmengine.logging import print_log
 from mmcv.cnn import ConvModule, build_conv_layer
+from mmcv.cnn.bricks import Dropout
 from mmdet.models import BaseDetector
 from mmdet.registry import MODELS
 
@@ -88,20 +89,32 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
             act_cfg=dict(type='ReLU'),
         )
         
-        self.backbone_reduce = ConvModule(
-            in_channels=2048,
-            out_channels=bb_out_ch,
-            kernel_size=1,
-            norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU'),
+        self.backbone_reduce = Sequential(
+            ConvModule(
+                in_channels=2048,
+                out_channels=bb_out_ch,
+                kernel_size=3,
+                padding=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=bb_out_ch,
+                out_channels=512,
+                kernel_size=3,
+                padding=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            )
         )
         
         self.ch_reduce = ConvModule(
-            in_channels=bb_out_ch,
+            in_channels=512,
             out_channels=64,
-            kernel_size=1,
+            kernel_size=3,
+            padding=1,
             norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')   # todo: try removing this act fn (mobilenetv2)
+            act_cfg=dict(type='ReLU')
         )
         
         self.downscale = Sequential(
@@ -125,16 +138,6 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
             )
         )
         
-        # self.downscale = ConvModule(
-        #     in_channels=512,
-        #     out_channels=bev_feat_ch,
-        #     kernel_size=3,
-        #     stride=2,
-        #     padding=1,
-        #     norm_cfg=dict(type='BN'),
-        #     act_cfg=dict(type='ReLU')
-        # )
-        
         # MODELS
         self.view_transformer = MODELS.build(view_transformer)
         self.fv_lane_head = MODELS.build(fv_lane_head)
@@ -149,8 +152,6 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
         
         self.learned_height_compressor = LearnedHeightCompression(channels=64, out_channels=128, num_z=28)
         self.spatial_relation_module = SimpleSpatialLinear(in_shape=(50, 12), out_shape=(50, 12), in_ch=128, context_ch=8, out_ch=128)
-        # self.cbam_spatial_module = CBAMSpatialModule(in_channels=2, out_channels=1, kernel_size=7)
-        # self.cbam_module = CBAM_Block(channels=128, ratio=16, kernel_size=7)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
         self.bev_loss_embed_weight = bev_loss_embed_weight
@@ -183,8 +184,8 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
         
         img = self.backbone_reduce(img)
         
-        img_32_bev = self.ch_reduce(img)
-        
+        img_32_bev = self.ch_reduce(img)        
+                
         voxel_feats, voxel_mask = self.view_transformer(img_32_bev, vox_proj_idx, vox_valid_mask)
         # B, C, Nx, Nz, Ny = voxel_feats.shape
         # bev_feats = masked_mean_height(voxel_feats, voxel_mask)

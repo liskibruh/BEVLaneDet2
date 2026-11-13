@@ -62,8 +62,10 @@ def main():
         
         runner.resume(filename=args.resume)
     
-    model = runner.model
+    # model = runner.model
     
+    # print(dict(model.named_modules()))
+        
     # total_fv_params = sum(p.numel() for p in model.fv_lane_head.parameters())
     # total_bev_params = sum(p.numel() for p in model.bev_lane_head.parameters())
     # total_params = sum(p.numel() for p in model.parameters())

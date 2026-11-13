@@ -38,3 +38,14 @@ visualizer = dict(
     name='visualizer',
     vis_backends=[dict(type='LocalVisBackend')],
 )
+
+
+custom_hooks = [
+    dict(
+        type="mmengine.FeatMapVisHook",
+        target_layers=['backbone_reduce'],
+        interval=990,
+        channel_reduction='squeeze_mean',
+        alpha=0.5
+    )
+]
