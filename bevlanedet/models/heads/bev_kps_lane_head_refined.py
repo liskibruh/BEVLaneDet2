@@ -1,3 +1,4 @@
+import logging
 from torch import nn
 from mmcv.cnn import build_upsample_layer, build_conv_layer, ConvModule
 from mmcv.cnn.bricks import Dropout
@@ -100,6 +101,7 @@ class InstanceEmbeddingRefined(BaseModule):
     def forward(self, x):
         feat = self.neck(x)
         return self.ms(feat), self.me(feat)
+
 @MODELS.register_module()
 class FVLaneHeadRefined(BaseDenseHead):
     def __init__(self, output_size, embed_net_cfg, input_channels=256, init_cfg=None):
@@ -372,12 +374,12 @@ class BEVLaneHeadVoxModRefined(BaseDenseHead):
         super().__init__(init_cfg=init_cfg)
         
         self.bev_up = Sequential(
-            build_upsample_layer(dict(type='bilinear', size=output_size, align_corners=False)),
+            build_upsample_layer(dict(type='bilinear', scale_factor=2)),
             Residual(
                 module=Sequential(
                     ConvModule(
                         in_channels=input_channels,
-                        out_channels=256,
+                        out_channels=64,
                         kernel_size=3,
                         padding=1,
                         bias=False,
@@ -386,10 +388,34 @@ class BEVLaneHeadVoxModRefined(BaseDenseHead):
                     ),
                     Dropout(drop_prob=0.2, inplace=False),
                     ConvModule(
-                        in_channels=256,
+                        in_channels=64,
+                        out_channels=128,
+                        kernel_size=3,
+                        padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=None
+                    )
+                )
+            ),
+            build_upsample_layer(dict(type='bilinear', size=output_size, align_corners=False)),
+            Residual(
+                module=Sequential(
+                    ConvModule(
+                        in_channels=128,
                         out_channels=64,
                         kernel_size=3,
                         padding=1,
+                        bias=False,
+                        norm_cfg=dict(type='BN'),
+                        act_cfg=dict(type='ReLU')
+                    ),
+                    Dropout(drop_prob=0.2, inplace=False),
+                    ConvModule(
+                        in_channels=64,
+                        out_channels=64,
+                        padding=1,
+                        kernel_size=3,
                         bias=False,
                         norm_cfg=dict(type='BN'),
                         act_cfg=None
@@ -397,9 +423,9 @@ class BEVLaneHeadVoxModRefined(BaseDenseHead):
                 ),
                 downsample=build_conv_layer(
                     dict(type='Conv2d'),
-                    in_channels=input_channels,
+                    in_channels=128,
                     out_channels=64,
-                    kernel_size=1
+                    kernel_size=1,
                 )
             )
         )

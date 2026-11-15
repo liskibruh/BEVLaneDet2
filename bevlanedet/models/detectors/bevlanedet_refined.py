@@ -55,6 +55,78 @@ class FuseBackboneFeats(nn.Module):
         
         return self.fuser(feat)
 
+class ChannelReducer(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        
+        self.reducer1 = Sequential(
+            ConvModule(
+                in_channels=in_channels,
+                out_channels=in_channels//2,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=in_channels//2,
+                out_channels=in_channels//4,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=in_channels//4,
+                out_channels=out_channels,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            )
+        )
+        
+        self.reducer2 = Sequential(
+            ConvModule(
+                in_channels=in_channels,
+                out_channels=in_channels//2,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=in_channels//2,
+                out_channels=in_channels//4,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            ),
+            ConvModule(
+                in_channels=in_channels//4,
+                out_channels=out_channels,
+                kernel_size=1,
+                norm_cfg=dict(type='BN'),
+                act_cfg=dict(type='ReLU')
+            )
+        )
+    
+        self.downsample = ConvModule(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=1,
+            norm_cfg=dict(type='BN'),
+            act_cfg=dict(type='ReLU')
+        )
+           
+    def forward(self, x):
+        # identity = x
+        
+        reduced1 = self.reducer1(x)
+        reduced2 = self.reducer2(x)
+        
+        x = reduced1 + reduced2
+        
+        # x = self.downsample(identity) + x
+        
+        return x
+
 @MODELS.register_module()
 class BEVLaneDetVoxUpscaledRefined(BaseDetector):
     def __init__(self,
@@ -89,52 +161,41 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
             act_cfg=dict(type='ReLU'),
         )
         
-        self.backbone_reduce = Sequential(
-            ConvModule(
-                in_channels=2048,
-                out_channels=bb_out_ch,
-                kernel_size=3,
-                padding=1,
-                norm_cfg=dict(type='BN'),
-                act_cfg=dict(type='ReLU')
-            ),
-            ConvModule(
-                in_channels=bb_out_ch,
-                out_channels=512,
-                kernel_size=3,
-                padding=1,
-                norm_cfg=dict(type='BN'),
-                act_cfg=dict(type='ReLU')
-            )
-        )
+        # self.backbone_reduce = Sequential(
+        #     ConvModule(
+        #         in_channels=2048,
+        #         out_channels=bb_out_ch,
+        #         kernel_size=1,
+        #         norm_cfg=dict(type='BN'),
+        #         act_cfg=dict(type='ReLU')
+        #     ),
+        #     ConvModule(
+        #         in_channels=bb_out_ch,
+        #         out_channels=1024,
+        #         kernel_size=1,
+        #         norm_cfg=dict(type='BN'),
+        #         act_cfg=dict(type='ReLU')
+        #     )
+        # )
         
-        self.ch_reduce = ConvModule(
-            in_channels=512,
-            out_channels=64,
-            kernel_size=3,
-            padding=1,
-            norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')
-        )
+        self.ch_reducer = ChannelReducer(in_channels=2048, out_channels=64)
         
         self.downscale = Sequential(
             ConvModule(
                 in_channels=128,
                 out_channels=bev_feat_ch,
-                kernel_size=3,
+                kernel_size=1,
                 stride=2,
-                padding=1,
                 norm_cfg=dict(type='BN'),
                 act_cfg=dict(type='ReLU')
             ),
             ConvModule(
                 in_channels=bev_feat_ch,
                 out_channels=bev_feat_ch,
-                kernel_size=3,
+                kernel_size=1,
                 stride=2,
-                padding=1,
                 norm_cfg=dict(type='BN'),
-                act_cfg=dict(type='ReLU')
+                # act_cfg=dict(type='ReLU')
             )
         )
         
@@ -182,11 +243,11 @@ class BEVLaneDetVoxUpscaledRefined(BaseDetector):
         )
         img = img_16 + img_32
         
-        img = self.backbone_reduce(img)
+        # img = self.backbone_reduce(img)
         
-        img_32_bev = self.ch_reduce(img)        
+        img = self.ch_reducer(img)        
                 
-        voxel_feats, voxel_mask = self.view_transformer(img_32_bev, vox_proj_idx, vox_valid_mask)
+        voxel_feats, voxel_mask = self.view_transformer(img, vox_proj_idx, vox_valid_mask)
         # B, C, Nx, Nz, Ny = voxel_feats.shape
         # bev_feats = masked_mean_height(voxel_feats, voxel_mask)
         

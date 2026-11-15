@@ -9,7 +9,8 @@ from .models.heads.bev_kps_lane_head_refined import InstanceEmbeddingRefined, FV
 from .models.losses import SoftIOULoss, NDPushPullLoss
 from .datasets.apollosim_lanes import ApolloSimDataset
 from .evaluation import LaneEval, LaneEvalVis
-from .hooks import FeatMapVisHook
+from .hooks import FeatMapVisHook, FeatMapVisHookCustom
+from .hooks import GradientMonitorHook
 
 __all__ = ["BEVLaneDet", "BEVLaneDetVox", "FCTransform_", "InstanceEmbedding", "FVLaneHead",
            "InstanceEmbeddingWithOffset", "BEVLaneHead", "BEVLaneHeadVoxMod", "ApolloSimDataset", 
@@ -17,4 +18,4 @@ __all__ = ["BEVLaneDet", "BEVLaneDetVox", "FCTransform_", "InstanceEmbedding", "
            "ExplicitVoxelProjection", "ExplicitVoxelProjectionBilinear", "FCTransform_Mod", "BEVLaneDetMod", 
            "ResNet_HeightAware", "BEVLaneDetVoxOcc", "BinOccHead", "InstanceEmbeddingRefined", 
            "FVLaneHeadRefined", "InstanceEmbeddingWithOffsetRefined", "BEVLaneHeadVoxModRefined", 
-           "BEVLaneDetVoxUpscaledRefined", "FeatMapVisHook"]
+           "BEVLaneDetVoxUpscaledRefined", "FeatMapVisHook", "FeatMapVisHookCustom", "GradientMonitorHook"]

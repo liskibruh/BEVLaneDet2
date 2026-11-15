@@ -42,10 +42,32 @@ visualizer = dict(
 
 custom_hooks = [
     dict(
-        type="mmengine.FeatMapVisHook",
-        target_layers=['backbone_reduce'],
+        type="mmengine.FeatMapVisHookCustom",
+        target_layers=[
+            'backbone.layer3', 'backbone.layer4',
+            'fv_lane_head.fv_up', 'fv_lane_head.head.neck', 'fv_lane_head.head.ms', 'fv_lane_head.head.me',
+            'ch_reducer',
+            'learned_height_compressor',
+            'downscale',
+            'spatial_relation_module',
+            'bev_lane_head.bev_up', 'bev_lane_head.head.neck', 'bev_lane_head.head.ms', 'bev_lane_head.head.moff', 'bev_lane_head.head.mz', 'bev_lane_head.head.me'
+        ],
         interval=990,
         channel_reduction='squeeze_mean',
         alpha=0.5
-    )
+    ),
+    # dict(
+    #     type="mmengine.GradientMonitorHook",
+    #     layer_groups = [
+    #         'backbone.layer1','backbone.layer2','backbone.layer3','backbone.layer4','backbone_downsample','backbone_reduce',
+    #         'ch_reduce',
+    #         'view_transformer',
+    #         'learned_height_compressor',
+    #         'downscale',
+    #         'spatial_relation_module',
+    #         'bev_lane_head',
+    #         'fv_lane_head',
+    #     ],
+    #     interval=990
+    # )
 ]
