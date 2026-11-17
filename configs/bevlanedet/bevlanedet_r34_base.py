@@ -62,7 +62,7 @@ custom_hooks = [
     dict(
         type="mmengine.GradientMonitorHook",
         layer_groups = [
-            'backbone.layer1','backbone.layer2','backbone.layer3','backbone.layer4','backbone_downsample','backbone_reduce',
+            'backbone.layer1','backbone.layer2','backbone.layer3','backbone.layer4',
             'ch_reduce',
             'view_transformer',
             'learned_height_compressor',
@@ -71,6 +71,7 @@ custom_hooks = [
             'bev_lane_head',
             'fv_lane_head',
         ],
-        interval=990
+        iter_interval=100,
+        epoch_interval=2
     )
 ]

@@ -235,7 +235,6 @@ class ChannelAttention(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
            
-        # The Shared MLP structure matching the paper
         self.mlp = nn.Sequential(
             nn.Linear(in_planes, in_planes // ratio, bias=False),
             nn.ReLU(),
@@ -245,24 +244,20 @@ class ChannelAttention(nn.Module):
 
     def forward(self, x):
         b, c, _, _ = x.size()
-        # Flatten spatial dims to feed to the Linear layers
         avg_out = self.mlp(self.avg_pool(x).view(b, c)).view(b, c, 1, 1)
         max_out = self.mlp(self.max_pool(x).view(b, c)).view(b, c, 1, 1)
         
-        # Element-wise summation of shared weights
         return self.sigmoid(avg_out + max_out)
 
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
-        # In planes is strictly 2 (1 for avg, 1 for max)
         self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=kernel_size//2, bias=False)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         avg_out = torch.mean(x, dim=1, keepdim=True)
         max_out, _ = torch.max(x, dim=1, keepdim=True)
-        # Concatenate along the channel axis
         x = torch.cat([avg_out, max_out], dim=1)
         x = self.conv1(x)
         return self.sigmoid(x)
@@ -282,9 +277,7 @@ class CBAM_Block(nn.Module):
         
         x = self.downscale(x)
         
-        # 1. Apply Channel Attention first
         x = x * self.ca(x)
-        # 2. Apply Spatial Attention sequentially downstream
         x = x * self.sa(x)
         
         x = nn.functional.interpolate(
@@ -295,5 +288,51 @@ class CBAM_Block(nn.Module):
         )
         
         x = self.downsample(x)
+        
+        return x
+
+class MLPMixer(nn.Module):
+    def __init__(self, in_shape, in_ch=128, token_mlp_dim=600, ch_mlp_ratio=4, dropout_prob=0):
+        super().__init__()
+        
+        num_tokens = in_shape[0] * in_shape[1]
+        channel_mlp_dim = in_ch * ch_mlp_ratio
+        
+        self.ln1 = nn.LayerNorm(in_ch)
+        
+        self.token_mlp = nn.Sequential(
+            nn.Linear(num_tokens, token_mlp_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_prob),
+            nn.Linear(token_mlp_dim, num_tokens),
+            nn.Dropout(dropout_prob)
+        )
+        
+        self.ln2 = nn.LayerNorm(in_ch)
+        
+        self.channel_mlp = nn.Sequential(
+            nn.Linear(in_ch, channel_mlp_dim),
+            nn.GELU(),
+            nn.Dropout(dropout_prob),
+            nn.Linear(channel_mlp_dim, in_ch),
+            nn.Dropout(dropout_prob)
+        )
+        
+    def forward(self, x):
+        B, C, H, W = x.shape
+        
+        x = x.flatten(2).transpose(1, 2) # (B, C, H, W) -> (B, C, H * W) -> (B, N, C) 
+        y = self.ln1(x)
+        y = y.transpose(1, 2) # (B, N, C) -> (B, C, N)
+        y = self.token_mlp(y)
+        y = y.transpose(1, 2) # (B, C, N) -> (B, N, C)
+        
+        x = x + y
+        
+        y = self.ln2(x)
+        y = self.channel_mlp(y)
+        x = x + y
+        
+        x = x.transpose(1, 2).reshape(B, C, H, W)
         
         return x

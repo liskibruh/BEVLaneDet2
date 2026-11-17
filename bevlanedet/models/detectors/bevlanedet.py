@@ -2,7 +2,7 @@ import logging
 import torch
 from torch import nn
 from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCompression, \
-    SimpleSpatialLinear, SimpleSpatialLinear2, CBAMSpatialModule, CBAM_Block
+    SimpleSpatialLinear, SimpleSpatialLinear2, CBAMSpatialModule, CBAM_Block, MLPMixer
 # from ...utils.cluster import embedding_post
 # from ...evaluation.utils.post_process_utils import bev_instance2points_with_offset_z
 
@@ -368,7 +368,7 @@ class BEVLaneDetVoxOcc(BaseDetector):
             out_channels=64,
             kernel_size=1,
             norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')   # todo: try removing this act fn (mobilenetv2)
+            act_cfg=dict(type='ReLU')
         )
         
         self.downscale = ConvModule(
@@ -565,7 +565,7 @@ class BEVLaneDetVox(BaseDetector):
             out_channels=64,
             kernel_size=1,
             norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')   # todo: try removing this act fn (mobilenetv2)
+            act_cfg=dict(type='ReLU')
         )
         
         self.downscale = ConvModule(
@@ -749,7 +749,7 @@ class BEVLaneDetVoxUpscaled(BaseDetector):
             out_channels=64,
             kernel_size=1,
             norm_cfg=dict(type='BN'),
-            act_cfg=dict(type='ReLU')   # todo: try removing this act fn (mobilenetv2)
+            act_cfg=dict(type='ReLU')
         )
         
         self.downscale = Sequential(
@@ -796,9 +796,8 @@ class BEVLaneDetVoxUpscaled(BaseDetector):
         self.loss_mse = MODELS.build(loss_z)
         
         self.learned_height_compressor = LearnedHeightCompression(channels=64, out_channels=128, num_z=28)
-        self.spatial_relation_module = SimpleSpatialLinear(in_shape=(50, 12), out_shape=(50, 12), in_ch=128, context_ch=8, out_ch=128)
-        # self.cbam_spatial_module = CBAMSpatialModule(in_channels=2, out_channels=1, kernel_size=7)
-        # self.cbam_module = CBAM_Block(channels=128, ratio=16, kernel_size=7)
+        # self.spatial_relation_module = SimpleSpatialLinear(in_shape=(50, 12), out_shape=(50, 12), in_ch=128, context_ch=8, out_ch=128)
+        self.mlp_mixer = MLPMixer(in_shape=(50, 12), in_ch=128, token_mlp_dim=600, ch_mlp_ratio=4, dropout_prob=0)
         
         self.bev_loss_seg_weight = bev_loss_seg_weight
         self.bev_loss_embed_weight = bev_loss_embed_weight
@@ -839,10 +838,8 @@ class BEVLaneDetVoxUpscaled(BaseDetector):
         
         bev_feats = self.downscale(bev_feats)
         
-        bev_feats = self.spatial_relation_module(bev_feats)
-        # bev_feats = self.distance_based_spatial_module(bev_feats)
-        # bev_feats = self.cbam_spatial_module(bev_feats)
-        # bev_feats = self.cbam_module(bev_feats)
+        # bev_feats = self.spatial_relation_module(bev_feats)
+        bev_feats = self.mlp_mixer(bev_feats)
         
         if self.training:
             return self.bev_lane_head(bev_feats), self.fv_lane_head(img)
