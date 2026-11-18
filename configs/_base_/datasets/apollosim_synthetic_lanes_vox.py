@@ -4,8 +4,8 @@ with read_base():
     from ..commons import *
 
 data_root = "./data/Apollo_Sim_3D_Lane_Release/"
-train_ann_path = "data_splits/illus_chg/train.json"
-val_ann_path = "data_splits/illus_chg/test.json"
+train_ann_path = "data_splits/rare_subset/train.json"
+val_ann_path = "data_splits/rare_subset/test.json"
 
 dataset = "ApolloSimDataset"
 
