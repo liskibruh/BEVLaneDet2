@@ -2,6 +2,20 @@ import os
 import cv2
 import numpy as np
 
+def ego2image(ego_points, camera_intrinsic, camera2ego_matrix):
+    """
+    :param ego_points:  3*n
+    :param camera_intrinsic: 3*3
+    :param camera2ego_matrix:  4*4
+    :return:
+    """
+    ego2camera_matrix = np.linalg.inv(camera2ego_matrix)
+    camera_points = np.dot(ego2camera_matrix[:3, :3], ego_points) + \
+                    ego2camera_matrix[:3, 3].reshape(3, 1)
+    image_points_ = camera_intrinsic @ camera_points
+    image_points = image_points_ / image_points_[2]
+    return image_points
+
 def get_camera_matrix(cam_h, cam_p):
     """
     cam_h: camera height in meters
@@ -103,13 +117,18 @@ class StandardCamera:
         vc_im_shape,
         cam_im_shape,
         cam_K,
-        ground2cam,
+        cam_ground2cam,
+        vc_ground2cam=None,
     ):
         self.vc_K = cam_K
-        self.vc_ground2cam = get_camera_matrix(vc_height, vc_pitch)
+        
+        if vc_ground2cam:
+            self.vc_ground2cam = vc_ground2cam
+        else:
+            self.vc_ground2cam = get_camera_matrix(vc_height, vc_pitch)
         
         self.cam_K = cam_K
-        self.ground2cam = ground2cam
+        self.ground2cam = cam_ground2cam
         
         self.vc_im_shape = vc_im_shape
         self.cam_im_shape = cam_im_shape

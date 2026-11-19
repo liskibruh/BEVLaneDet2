@@ -1,9 +1,12 @@
 import numpy as np
+import copy
 import torch
 import cv2
 from scipy.interpolate import make_interp_spline
+import numpy as np
+import matplotlib.pyplot as plt
 
-from .utils import  get_camera_matrix, get_ground2ipm, \
+from .utils import  ego2image, get_camera_matrix, get_ground2ipm, \
                     dedup_and_sort_x, dedup_and_sort_x_old, \
                     calculate_dist, save_gt_vis, StandardCamera
 
@@ -235,12 +238,12 @@ class GenerateLaneTargets(BaseTransform):
         if self.vc_config.use_virtual_cam:
             
             sc = StandardCamera(
-                self.vc_config.vc_height,
-                self.vc_config.vc_pitch,
-                self.vc_config.vc_im_shape,
-                image.shape[:2],
-                self.K,
-                ground2cam
+                vc_height=self.vc_config.vc_height,
+                vc_pitch=self.vc_config.vc_pitch,
+                vc_im_shape=self.vc_config.vc_im_shape,
+                cam_im_shape=image.shape[:2],
+                cam_K=self.K,
+                cam_ground2cam=ground2cam
             )
             
             H = sc.get_H(height=0)
@@ -303,9 +306,250 @@ class GenerateLaneTargets(BaseTransform):
         
         return results
 
+@TRANSFORMS.register_module()
+class GenerateOpenLaneTargets(BaseTransform):
+    def __init__(self,
+                x_range,
+                y_range,
+                meter_per_pixel,
+                vc_config,
+                use_virtual_cam=True,
+                ):
+        self.x_range = x_range
+        self.y_range = y_range
+        self.meter_per_pixel = meter_per_pixel
+        self.vc_config = vc_config
+        self.use_virtual_cam = use_virtual_cam
+        
+        self.ipm_h = int((self.x_range[1] - self.x_range[0]) / meter_per_pixel)
+        self.ipm_w = int((self.y_range[1] - self.y_range[0]) / meter_per_pixel)
+        
+        self.lane_length_threshold = 3
+        self.smooth = False
+        
+    def draw_lines(self, lane_ground, ground2cam, image_gt, lane_idx):
+        """
+        lane_ground: homogeneous lane coordinates in ground coordinate of shape (4, M)
+        ground2cam: homography matrix for ground-to-cam transformation
+        """
+        
+        # ground -> cam -> image
+        lane_cam = ground2cam @ lane_ground
+        lane_img = self.K @ lane_cam[ :3]
+        lane_img = lane_img / lane_img[2]
+        lane_uv  = lane_img[ :2].T
+        
+        # draw lanes on image
+        cv2.polylines(
+            img=        image_gt,
+            pts=        [lane_uv.astype(int)],
+            isClosed=   False,
+            color=      lane_idx + 1,
+            thickness=  3
+        )
+        
+        return image_gt
+    
+    def get_yz_offsets(self, ipm_lanes):
+        """
+        ipm_lanes: 
+            type:   dict
+            keys:   lane indices
+            values: lane points in shape (3, M)
+        """
+        
+        ipm_h = self.ipm_h
+        ipm_w = self.ipm_w
+        
+        lanes_xy_dense, lanes_xz_dense = {}, {}
+        lanes_xy_sparse_bin, lanes_xy_dense_bin = {}, {}
+        
+        for idx in ipm_lanes:
+            
+            ipm_points = np.array(ipm_lanes[idx])
+            
+            # filter out-of-bounds points
+            
+            # inbounds = np.where(
+            #     (ipm_points[0] >= 0) & (ipm_points[0] < ipm_h) &
+            #     (ipm_points[1] >= 0) & (ipm_points[1] < ipm_w)
+            #     )[0]
+            
+            inbounds = np.where(
+                (ipm_points[0] >= 0) & (ipm_points[0] < ipm_h)
+                )[0]
+            
+            ipm_points = ipm_points.T[inbounds].T
+            
+            if len(ipm_points[0]) <= 1:
+                continue
+            
+            x_ = ipm_points[0]
+            y_ = ipm_points[1]
+            z_ = ipm_points[2]
+            
+            # sort points and remove dups
+            x, y, z = dedup_and_sort_x(x_, y_, z_)
+            # x, y, z = dedup_and_sort_x_old(x_, y_, z_)
+            
+            if len(x) <= 1:
+                continue
+            
+            # interpolate to dense lane points
+            x_dense = np.linspace(x.min(), x.max(), 
+                                    int((x.max() - x.min()) // 0.05))
+            x_bin = np.linspace(int(x.min()), int(x.max()), 
+                                    int(int(x.max()) - int(x.min()))+1)
+            
+            if len(x) <=2:
+                y_fn = make_interp_spline(x, y, k=1)    # linear
+                z_fn = make_interp_spline(x, z, k=1)
+            
+            elif len(x) <=3:
+                y_fn = make_interp_spline(x, y, k=2)   # quadratic                
+                z_fn = make_interp_spline(x, z, k=2)
+            
+            else:
+                y_fn = make_interp_spline(x, y, k=3)    # cubic                
+                z_fn = make_interp_spline(x, z, k=3)
+            
+            y_dense = y_fn(x_dense)
+            y_bin   = y_fn(x_bin) 
+            z_dense = z_fn(x_dense, extrapolate=False)
+            
+            lanes_xy_dense[idx]      = np.array([x_dense, y_dense])
+            lanes_xz_dense[idx]      = np.array([x_dense, z_dense])
+            lanes_xy_dense_bin[idx]  = np.array([x_dense, y_dense]).astype(int)
+            lanes_xy_sparse_bin[idx] = np.array([x_bin, y_bin]).astype(int)
+        
+        # create offset maps
+        ipm_image   = np.zeros((ipm_h, ipm_w), dtype=np.float32)
+        offset_map  = np.zeros((ipm_h, ipm_w), dtype=np.float32)
+        height_map  = np.zeros((ipm_h, ipm_w), dtype=np.float32)
+        
+        for idx in lanes_xy_sparse_bin:
+            lane_sparse_bin = lanes_xy_sparse_bin[idx].T    # (2,M) -> (M,2)
+            
+            for pt in lane_sparse_bin:
+                row, col = pt[0], pt[1]
+                
+                # if not(0 < row < ipm_h and 0 <= col < ipm_w):
+                if not(0 <= row < ipm_h and 0 < col < ipm_w):
+                    continue
+                
+                ipm_image[row, col] = idx
+                center = np.array([row, col])
+                
+                offset_y, z = calculate_dist(
+                    center,
+                    lanes_xy_dense[idx],
+                    lanes_xz_dense[idx],
+                    lanes_xy_dense_bin[idx]
+                )
+                
+                if offset_y is None:
+                    ipm_image[row, col] = 0
+                    continue
+                
+                if offset_y > 1:
+                    offset_y = 1
+                
+                if offset_y < 0:
+                    offset_y = 0
+                
+                offset_map[row][col] = offset_y
+                height_map[row][col] = z
+        
+        return ipm_image, offset_map, height_map, lanes_xy_sparse_bin, lanes_xy_dense
+    
+    def transform(self, results):
+        
+        # cam_height = results['cam_height']
+        # cam_pitch = results['cam_pitch']
+        lanes_w = results['lane_lines']
+        image = results['img']
+        image_gt = np.zeros(image.shape[:2], np.uint8)
+        
+        camw2ego_extrinsics = np.array([results['extrinsic']])
+        matrix_camw2cam = np.array([
+            [0,  0,  1,  0],
+            [-1, 0,  0,  0],
+            [0, -1,  0,  0],
+            [0,  0,  0,  1]
+        ], dtype=float)
+        
+        cam_extrinsics = camw2ego_extrinsics @ matrix_camw2cam
+        
+        R_vg = np.array([
+            [0,  1, 0],
+            [-1, 0, 0],
+            [0,  0, 1]
+        ], dtype=float)
+        
+        R_gc = np.array([
+            [1,  0, 0],
+            [0,  0, 1],
+            [0, -1, 0]
+        ], dtype=float)
+        
+        cam_extrinsics_persformer = copy.deepcopy(camw2ego_extrinsics)
+        cam_extrinsics_persformer[:3, :3] = np.matmul(np.matmul(np.matmul(np.linagl.inv(R_vg), cam_extrinsics_persformer[:3, :3]), R_vg))
+        cam_extrinsics_persformer[0:2, 3] = 0.0
+        matrix_lane2persformer = cam_extrinsics_persformer @ np.linalg.inv(matrix_camw2cam)
+        cam_intrinsic = np.arra(results['intrinsic'])
+        
+        matrix_ego2ipm = get_ground2ipm(
+            self.x_range,
+            self.y_range,
+            self.meter_per_pixel
+        )
+        
+        gt_lanes = []
+        ipm_lanes = {}
+        for idx in range(len(lanes_w)):
+            
+            lane1 = lanes_w[idx]
+            lane_camw = np.array(lane1['xyz']).T[np.array(lane1['visiblitiy']) == 1.0].T
+            lane_camw = np.vstack([
+                lane_camw,
+                np.ones((1, lane_camw.shape[1]))
+            ])
+            
+            lane_ego_persformer = matrix_lane2persformer @ lane_camw
+            lane_ego = camw2ego_extrinsics @ lane_camw
+            
+            '''plto uv'''
+            uv1 = ego2image(lane_ego[:3], cam_intrinsic, cam_extrinsics)
+            cv2.polylines(image_gt, [uv1[0:2, :].T.astype(np.int)], False, idx + 1, self.lane2d_thick)
+            
+            distance = np.sqrt((lane_ego_persformer[0][0] - lane_ego_persformer[0][-1]) ** 2 + (
+                               lane_ego_persformer[1][0] - lane_ego_persformer[1][-1]) ** 2)
+            
+            if distance < self.lane_length_threshold:
+                continue
+            
+            # y = lane_ego_persformer[1]
+            # x = lane_ego_persformer[0]
+            # z = lane_ego_persformer[2]
+            
+            if self.smooth:
+                # todo: interpolate
+                pass
+            else:
+                x = lane_ego_persformer[0, :]
+                y = lane_ego_persformer[1, :]
+                
+                ipm_points = matrix_ego2ipm @ np.vstack([
+                    y,
+                    x,
+                    np.ones_like(x)
+                ])
+            #############################################################################################
+            ############################## CONTINUE FROM HERE ###########################################
+            #############################################################################################
 
-import numpy as np
-import matplotlib.pyplot as plt
+
+
 
 
 def visualize_occupancy(
