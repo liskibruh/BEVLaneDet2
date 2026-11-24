@@ -233,7 +233,7 @@ class FeatMapVisHookCustom(Hook):
                 'signed': 2.5,
                 'magnitude': 2.5
             },
-            'ch_reducer': {
+            'ch_reduce': {
                 'signed': 1.5,
                 'magnitude': 1.5
             },
@@ -308,7 +308,7 @@ class FeatMapVisHookCustom(Hook):
             if layer_name not in modules:
                 runner.logger.warning(
                     f"[FeatureMapVisHook] Layer {layer_name} not found in model. "
-                    f"Available top-level modules: {list(model._modules().keys())}"
+                    f"Available top-level modules: {list(modules.keys())}"
                 )
                 
                 continue
@@ -333,7 +333,7 @@ class FeatMapVisHookCustom(Hook):
 
         out_dir = os.path.join(
             runner.work_dir,
-            'featmaps_r50_exp_spread_reduce2'
+            'featmaps_r34_openlane'
         )
 
         sample_dir = os.path.join(

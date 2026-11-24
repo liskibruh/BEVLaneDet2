@@ -82,6 +82,7 @@ class LaneEval(BaseMetric):
             
             self.results.append({
                 'raw_file': sample['raw_file'],
+                'img_path': sample['img_path'],
                 'gt_lines': gt_lines,
                 'pred_lines': pred_lines
             })
@@ -368,6 +369,7 @@ class LaneEvalVis(BaseMetric):
             
             self.results.append({
                 'raw_file': sample['raw_file'],
+                'img_path': sample['img_path'],
                 'gt_lines': gt_lines,
                 'pred_lines': pred_lines,
                 'K': sample['K'],
@@ -629,7 +631,7 @@ class LaneEvalVis(BaseMetric):
             
             if visualizer is not None and idx < self.vis_max_num:
                 
-                img_path = os.path.join(self.data_root, res['raw_file'])
+                img_path = res['img_path']
                 self.visualize_sample(img_path, res, np.array(res['K']), np.array(res['ground2cam']), visualizer)
         
         return self.show()

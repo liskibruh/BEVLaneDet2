@@ -325,30 +325,10 @@ class GenerateOpenLaneTargets(BaseTransform):
         self.ipm_w = int((self.y_range[1] - self.y_range[0]) / meter_per_pixel)
         
         self.lane_length_threshold = 3
+        self.lane2d_thick = 3
+        self.lane3d_thick = 1
+        
         self.smooth = False
-        
-    def draw_lines(self, lane_ground, ground2cam, image_gt, lane_idx):
-        """
-        lane_ground: homogeneous lane coordinates in ground coordinate of shape (4, M)
-        ground2cam: homography matrix for ground-to-cam transformation
-        """
-        
-        # ground -> cam -> image
-        lane_cam = ground2cam @ lane_ground
-        lane_img = self.K @ lane_cam[ :3]
-        lane_img = lane_img / lane_img[2]
-        lane_uv  = lane_img[ :2].T
-        
-        # draw lanes on image
-        cv2.polylines(
-            img=        image_gt,
-            pts=        [lane_uv.astype(int)],
-            isClosed=   False,
-            color=      lane_idx + 1,
-            thickness=  3
-        )
-        
-        return image_gt
     
     def get_yz_offsets(self, ipm_lanes):
         """
@@ -463,14 +443,13 @@ class GenerateOpenLaneTargets(BaseTransform):
         return ipm_image, offset_map, height_map, lanes_xy_sparse_bin, lanes_xy_dense
     
     def transform(self, results):
-        
         # cam_height = results['cam_height']
         # cam_pitch = results['cam_pitch']
         lanes_w = results['lane_lines']
         image = results['img']
         image_gt = np.zeros(image.shape[:2], np.uint8)
         
-        camw2ego_extrinsics = np.array([results['extrinsic']])
+        camw2ego_extrinsics = np.array(results['extrinsic'])
         matrix_camw2cam = np.array([
             [0,  0,  1,  0],
             [-1, 0,  0,  0],
@@ -493,10 +472,10 @@ class GenerateOpenLaneTargets(BaseTransform):
         ], dtype=float)
         
         cam_extrinsics_persformer = copy.deepcopy(camw2ego_extrinsics)
-        cam_extrinsics_persformer[:3, :3] = np.matmul(np.matmul(np.matmul(np.linagl.inv(R_vg), cam_extrinsics_persformer[:3, :3]), R_vg))
+        cam_extrinsics_persformer[:3, :3] = np.matmul(np.matmul(np.matmul(np.linalg.inv(R_vg), cam_extrinsics_persformer[:3, :3]), R_vg), R_gc)
         cam_extrinsics_persformer[0:2, 3] = 0.0
         matrix_lane2persformer = cam_extrinsics_persformer @ np.linalg.inv(matrix_camw2cam)
-        cam_intrinsic = np.arra(results['intrinsic'])
+        cam_intrinsic = np.array(results['intrinsic'])
         
         matrix_ego2ipm = get_ground2ipm(
             self.x_range,
@@ -507,9 +486,8 @@ class GenerateOpenLaneTargets(BaseTransform):
         gt_lanes = []
         ipm_lanes = {}
         for idx in range(len(lanes_w)):
-            
             lane1 = lanes_w[idx]
-            lane_camw = np.array(lane1['xyz']).T[np.array(lane1['visiblitiy']) == 1.0].T
+            lane_camw = np.array(lane1['xyz']).T[np.array(lane1['visibility']) == 1.0].T
             lane_camw = np.vstack([
                 lane_camw,
                 np.ones((1, lane_camw.shape[1]))
@@ -520,7 +498,7 @@ class GenerateOpenLaneTargets(BaseTransform):
             
             '''plto uv'''
             uv1 = ego2image(lane_ego[:3], cam_intrinsic, cam_extrinsics)
-            cv2.polylines(image_gt, [uv1[0:2, :].T.astype(np.int)], False, idx + 1, self.lane2d_thick)
+            cv2.polylines(image_gt, [uv1[0:2, :].T.astype(np.int32)], False, idx + 1, self.lane2d_thick)
             
             distance = np.sqrt((lane_ego_persformer[0][0] - lane_ego_persformer[0][-1]) ** 2 + (
                                lane_ego_persformer[1][0] - lane_ego_persformer[1][-1]) ** 2)
@@ -528,25 +506,92 @@ class GenerateOpenLaneTargets(BaseTransform):
             if distance < self.lane_length_threshold:
                 continue
             
-            # y = lane_ego_persformer[1]
-            # x = lane_ego_persformer[0]
-            # z = lane_ego_persformer[2]
+            y = lane_ego_persformer[1, :]
+            x = lane_ego_persformer[0, :]
+            z = lane_ego_persformer[2, :]
             
             if self.smooth:
-                # todo: interpolate
-                pass
-            else:
-                x = lane_ego_persformer[0, :]
-                y = lane_ego_persformer[1, :]
+                x, y, z = dedup_and_sort_x(x, y, z)
                 
-                ipm_points = matrix_ego2ipm @ np.vstack([
-                    y,
-                    x,
-                    np.ones_like(x)
-                ])
-            #############################################################################################
-            ############################## CONTINUE FROM HERE ###########################################
-            #############################################################################################
+                if len(x) < 2:
+                    continue
+                elif len(x) == 2:
+                    curve = np.polyfit(x, y, 1)
+                    function2 = make_interp_spline(x, z, k=1)
+                elif len(x) == 3:
+                    curve = np.polyfit(x, y, 2)
+                    function2 = make_interp_spline(x, z, k=2)
+                else:
+                    curve = np.polyfit(x, y, 3)
+                    function2 = make_interp_spline(x, z, k=3)
+                    
+                x = np.linspace(min(x), max(x), 20)
+                y = np.poly1d(curve)(x)
+                z = function2(x)
+                
+            lane_ipm = matrix_ego2ipm @ np.vstack([
+                y,
+                x,
+                np.ones_like(x)
+            ])
+            
+            lane_ipm = np.concatenate([
+                lane_ipm,
+                np.expand_dims(z, axis=0)
+            ], axis=0)
+                
+            ipm_lanes[idx+1] = lane_ipm
+        
+        # generate bev targets
+        # bev_gt, y_offset_map, z_map, sparse_xy_lanes, dense_xy_lanes = self.get_yz_offsets(ipm_lanes)
+        bev_gt, y_offset_map, z_map, _, _ = self.get_yz_offsets(ipm_lanes)
+        
+        # virtual camera projection for PV
+        if self.vc_config['use_virtual_cam']:
+            
+            sc = StandardCamera(
+                vc_height=None,
+                vc_pitch=None,
+                vc_im_shape=self.vc_config['vc_im_shape'],
+                cam_im_shape=image.shape[:2],
+                cam_K=cam_intrinsic,
+                cam_ground2cam=cam_extrinsics,
+                vc_ground2cam=np.array(self.vc_config['vc_extrinsic']),
+            )
+            
+            H = sc.get_H(height=0)
+            image = cv2.warpPerspective(image, H, self.vc_config['vc_im_shape'])
+            image_gt = cv2.warpPerspective(image_gt, H, self.vc_config['vc_im_shape'])
+            results['H_vc'] = H
+        
+        image_gt_instance = image_gt.copy()
+        image_gt_segment = image_gt.copy()
+        image_gt_segment[image_gt_segment > 0] = 1
+        
+        bev_gt_instance = bev_gt.copy()
+        bev_gt_segment = bev_gt.copy()
+        bev_gt_segment[bev_gt_segment > 0] = 1
+        
+        # results['image_gt'] = image_gt
+        # results['bev_gt'] = bev_gt
+        
+        results['gt_lanes'] = gt_lanes
+        
+        results['img'] = image        
+        results['image_gt_segment'] = image_gt_segment
+        results['image_gt_instance'] = image_gt_instance
+        
+        results['bev_gt_segment'] = bev_gt_segment
+        results['bev_gt_instance'] = bev_gt_instance
+        results['bev_y_offset_map'] = y_offset_map
+        results['bev_z_map'] = z_map
+        results['bev_gt_shape'] = bev_gt.shape
+        
+        results['ground2cam'] = np.linalg.inv(cam_extrinsics_persformer)
+        # results['cam2ground'] = cam2ground
+        # results['ground2ipm'] = ground2ipm 
+        results['K'] = cam_intrinsic
+        return results
 
 
 
@@ -1310,34 +1355,6 @@ class Voxel_Generator_Cont(BaseTransform):
         uv_indices_full = np.zeros((2, num_voxels), dtype=np.float32)
         voxel_valid_mask = np.zeros(num_voxels, dtype=bool)
         voxel_ids = np.flatnonzero(voxel_cam[2, :] > 1e-3)
-        
-        # valid_depth = voxel_cam[2, :] > 1e-3
-        
-        # for visual
-        # vis_voxel_centers_valid = ((voxel_centers[2, :] > 1e-3) & (voxel_centers[2, :] <= 1.6))
-        # vis_voxel_centers = voxel_centers[:, vis_voxel_centers_valid]
-        # vis_voxel_centers = voxel_centers.copy()
-        # vis_ones = np.ones((1, vis_voxel_centers.shape[1]), dtype=vis_voxel_centers.dtype)
-        # vis_centers_homo = np.concatenate(
-        #     [vis_voxel_centers, vis_ones], axis=0
-        # )
-        # voxel_cam_vis = ground2cam @ vis_centers_homo
-        # vis_valid = ((voxel_cam_vis[2, :] > 1e-3) & (voxel_cam_vis[2,: ] <=5.00))
-        # voxel_cam_vis = voxel_cam_vis[:3, vis_valid]
-        # voxel_uvz_vis = cam_intrinsic @ voxel_cam_vis[:3, :]
-        # voxel_uv_vis = (
-        #     voxel_uvz_vis[:2, :] / voxel_uvz_vis[2:3, :]
-        # )
-        # voxel_uv_homo_vis = np.vstack([
-        #     voxel_uv_vis,
-        #     np.ones((1, voxel_uv_vis.shape[1])),
-        # ])
-        # vis_uvz_warped_homo = H_vc @ voxel_uv_homo_vis
-        # vis_valid_warped_homo = np.abs(vis_uvz_warped_homo[2, :] > 1e-8)
-        # vis_uv_warped = (
-        #     vis_uvz_warped_homo[:2, vis_valid_warped_homo]
-        #     / vis_uvz_warped_homo[2:3, vis_valid_warped_homo]
-        # )
         
         voxel_cam_valid = voxel_cam[:3, voxel_ids]
         voxel_uvz = cam_intrinsic @ voxel_cam_valid

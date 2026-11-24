@@ -9,3 +9,4 @@ __pycache__/
 /work_dirs*
 /*egg-info*
 logs/train_bevlanedet_vox_exp3_20261027_142713_wrong.log
+logs/train_bevlanedet_openlane_exp1_20261124_195431.log

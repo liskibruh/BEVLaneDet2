@@ -94,7 +94,7 @@ val_pipeline = [
         input_shape=input_shape,
         feat_downscale=feat_downscale,
         ),
-    dict(type="Resize", scale=(input_shape[1], input_shape[0]), keep_ratio=True),
+    dict(type="Resize", scale=(input_shape[1], input_shape[0]), keep_ratio=False),
     dict(type="PackLaneDataVox")
     # dict(type="RandomFlip", prob=0.5),
     

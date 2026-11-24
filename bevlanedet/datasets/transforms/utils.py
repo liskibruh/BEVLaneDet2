@@ -122,7 +122,7 @@ class StandardCamera:
     ):
         self.vc_K = cam_K
         
-        if vc_ground2cam:
+        if vc_ground2cam is not None:
             self.vc_ground2cam = vc_ground2cam
         else:
             self.vc_ground2cam = get_camera_matrix(vc_height, vc_pitch)

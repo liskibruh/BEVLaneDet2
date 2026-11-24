@@ -71,6 +71,7 @@ class OpenLaneDataset(Dataset):
         self.data_root = data_root
         self.feat_downscale = feat_downscale
         self.ann_dir = os.path.join(data_root, ann_dir)
+        self.fully_initialized = False
         
         if not os.path.exists(self.ann_dir):
             raise FileNotFoundError(f"{self.ann_dir} does not exist")
@@ -79,8 +80,13 @@ class OpenLaneDataset(Dataset):
         self.full_init()
     
     def full_init(self):
+        if self.fully_initialized:
+            return
+        
         self.data_list = self.load_data_list()
         self.data_list = self.filter_data()
+        
+        self.fully_initialized = True
     
     def __len__(self):
         return len(self.data_list)
@@ -108,7 +114,12 @@ class OpenLaneDataset(Dataset):
             segment_pth = os.path.join(self.ann_dir, segment)
             segments_files = os.listdir(segment_pth)
             
+            count = 0
             for seg_file in tqdm(segments_files, desc=f"Loading JSONs from segment no. {i+1} [{segment}] ", unit="file", total=len(segments_files)):
+                
+                if count >= 25:
+                    break
+                
                 file_pth = os.path.join(segment_pth, seg_file) if seg_file.endswith('.json') else 'invalid'
                 
                 if file_pth == 'invalid':
@@ -117,9 +128,12 @@ class OpenLaneDataset(Dataset):
                 with open(file_pth, 'r') as infile:
                     info_dict = json.load(infile)
                     raw_file = info_dict['file_path']
-                    info_dict['img_path'] = os.path.join(self.data_root, raw_file)
+                    info_dict['raw_file'] = info_dict.pop('file_path')
+                    info_dict['img_path'] = os.path.join(self.data_root, "images", raw_file)
                     
                     data_infos.append(info_dict)
+                
+                count += 1
                     
         logger.info(f"Loaded annotations for total of {len(data_infos)} samples")
          
@@ -141,12 +155,12 @@ class OpenLaneDataset(Dataset):
         
         return data
 
-if __name__ == "__main__":
-    dataset = OpenLaneDatasetVox(
-        data_root= r"C:\Users\oo_wa\Downloads\python_scripts\BEVLaneDet2\data\OpenLane",
-        ann_dir = "lane3d_300/training/",
-        lazy_init = False,
-        pipeline = None
-    )
+# if __name__ == "__main__":
+#     dataset = OpenLaneDataset(
+#         data_root= r"C:\Users\oo_wa\Downloads\python_scripts\BEVLaneDet2\data\OpenLane",
+#         ann_dir = "lane3d_300/training/",
+#         lazy_init = False,
+#         pipeline = None
+#     )
     
-    print(dataset.__getitem__(2))
+#     print(dataset.__getitem__(2))
