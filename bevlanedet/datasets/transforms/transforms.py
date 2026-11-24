@@ -506,6 +506,10 @@ class GenerateOpenLaneTargets(BaseTransform):
             if distance < self.lane_length_threshold:
                 continue
             
+            lane_gt = lane_ego_persformer[:3].T
+            lane_gt = lane_gt[np.argsort(lane_gt[:, 1])]
+            gt_lanes.append(lane_gt.tolist())
+            
             y = lane_ego_persformer[1, :]
             x = lane_ego_persformer[0, :]
             z = lane_ego_persformer[2, :]

@@ -366,7 +366,6 @@ class LaneEvalVis(BaseMetric):
              
             gt_lines = sample['gt_lanes']
             
-            
             self.results.append({
                 'raw_file': sample['raw_file'],
                 'img_path': sample['img_path'],

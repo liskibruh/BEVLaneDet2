@@ -128,7 +128,7 @@ val_dataloader = dict(
 
 val_evaluator = dict(
     type="LaneEvalVis",
-    post_conf=0.9,
+    post_conf=-0.7,
     post_emb_margin=6.0,
     post_min_cluster_size=15,
     x_range=x_range,
