@@ -2,7 +2,7 @@ import numpy as np
 import copy
 import torch
 import cv2
-from scipy.interpolate import make_interp_spline
+from scipy.interpolate import make_interp_spline, PchipInterpolator
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -375,27 +375,26 @@ class GenerateOpenLaneTargets(BaseTransform):
             if len(x) <= 1:
                 continue
             
+            x_start = int(np.ceil(x.min()))
+            x_end = int(np.floor(x.max()))
+            
+            # skip lanes that do not span at least one integer grid bin
+            if x_end < x_start:
+                continue
+            
             # interpolate to dense lane points
             x_dense = np.linspace(x.min(), x.max(), 
                                     int((x.max() - x.min()) // 0.05))
-            x_bin = np.linspace(int(x.min()), int(x.max()), 
-                                    int(int(x.max()) - int(x.min()))+1)
             
-            if len(x) <=2:
-                y_fn = make_interp_spline(x, y, k=1)    # linear
-                z_fn = make_interp_spline(x, z, k=1)
+            x_bin = np.linspace(int(x_start), int(x_end), 
+                                    int(int(x_end) - int(x_start))+1)
             
-            elif len(x) <=3:
-                y_fn = make_interp_spline(x, y, k=2)   # quadratic                
-                z_fn = make_interp_spline(x, z, k=2)
-            
-            else:
-                y_fn = make_interp_spline(x, y, k=3)    # cubic                
-                z_fn = make_interp_spline(x, z, k=3)
+            y_fn = PchipInterpolator(x, y, extrapolate=False)
+            z_fn = PchipInterpolator(x, z, extrapolate=False)
             
             y_dense = y_fn(x_dense)
             y_bin   = y_fn(x_bin) 
-            z_dense = z_fn(x_dense, extrapolate=False)
+            z_dense = z_fn(x_dense)
             
             lanes_xy_dense[idx]      = np.array([x_dense, y_dense])
             lanes_xz_dense[idx]      = np.array([x_dense, z_dense])
@@ -487,7 +486,11 @@ class GenerateOpenLaneTargets(BaseTransform):
         ipm_lanes = {}
         for idx in range(len(lanes_w)):
             lane1 = lanes_w[idx]
-            lane_camw = np.array(lane1['xyz']).T[np.array(lane1['visibility']) == 1.0].T
+            lane_camw = np.array(lane1['xyz']).T[np.array(lane1['visibility']) > 0].T
+            
+            if lane_camw.shape[1] < 2:
+                continue
+            
             lane_camw = np.vstack([
                 lane_camw,
                 np.ones((1, lane_camw.shape[1]))
@@ -547,8 +550,8 @@ class GenerateOpenLaneTargets(BaseTransform):
             ipm_lanes[idx+1] = lane_ipm
         
         # generate bev targets
-        # bev_gt, y_offset_map, z_map, sparse_xy_lanes, dense_xy_lanes = self.get_yz_offsets(ipm_lanes)
-        bev_gt, y_offset_map, z_map, _, _ = self.get_yz_offsets(ipm_lanes)
+        bev_gt, y_offset_map, z_map, sparse_xy_lanes, dense_xy_lanes = self.get_yz_offsets(ipm_lanes)
+        # bev_gt, y_offset_map, z_map, _, _ = self.get_yz_offsets(ipm_lanes)
         
         # virtual camera projection for PV
         if self.vc_config['use_virtual_cam']:
@@ -567,6 +570,25 @@ class GenerateOpenLaneTargets(BaseTransform):
             image = cv2.warpPerspective(image, H, self.vc_config['vc_im_shape'])
             image_gt = cv2.warpPerspective(image_gt, H, self.vc_config['vc_im_shape'])
             results['H_vc'] = H
+        
+        # debug
+        # debug_gt = {
+        #     'image': image,
+        #     'image_gt': image_gt,
+        #     'ipm_image': bev_gt,
+        #     'ipm_lanes': ipm_lanes,
+        #     'ipm_y_offset_map': y_offset_map,
+        #     'ipm_z_map': z_map,
+        #     'ipm_sparse_xy_lanes': sparse_xy_lanes,
+        #     'ipm_dense_xy_lanes': dense_xy_lanes,
+        #     'x_range': self.x_range,
+        #     'y_range': self.y_range,
+        #     'm_per_pixel': self.meter_per_pixel
+        # }
+        
+        # fname = results['img_path'].split('/')[-1]
+        
+        # save_gt_vis(gt=debug_gt, fname=fname, out_dir="./")
         
         image_gt_instance = image_gt.copy()
         image_gt_segment = image_gt.copy()
@@ -596,10 +618,6 @@ class GenerateOpenLaneTargets(BaseTransform):
         # results['ground2ipm'] = ground2ipm 
         results['K'] = cam_intrinsic
         return results
-
-
-
-
 
 def visualize_occupancy(
     occupancy,

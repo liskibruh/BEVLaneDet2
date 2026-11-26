@@ -48,7 +48,30 @@ def get_ground2ipm(x_range, y_range, m_per_pixel=0.5):
     
     return ground2ipm
 
-def dedup_and_sort_x(x, y, z):
+def dedup_and_sort_x(x, y, z, min_dx=1e-4):
+  """
+    Sorts by longitudinal coordinate x, groups points within min_dx of each other,
+    and replaces each group with the mean of (x, y, z).
+    """
+  if len(x) == 0:
+    return x, y, z
+
+  order = np.argsort(x)
+  x, y, z = x[order], y[order], z[order]
+
+  is_new_group = np.concatenate(([True], np.diff(x) >= min_dx))
+  group_starts = np.flatnonzero(is_new_group)
+
+  counts = np.diff(np.append(group_starts, len(x)))
+
+  x_avg = np.add.reduceat(x, group_starts) / counts
+  y_avg = np.add.reduceat(y, group_starts) / counts
+  z_avg = np.add.reduceat(z, group_starts) / counts
+
+  return x_avg, y_avg, z_avg
+
+
+def dedup_and_sort_x_stable(x, y, z):
     """
     x, y, z are IPM (BEV) lane coordinates
         x: longitudnal

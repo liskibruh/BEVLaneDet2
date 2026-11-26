@@ -1,15 +1,17 @@
 import json
 import copy
-import sys
 import numpy as np
 import os
+import random
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
 from mmengine.dataset import BaseDataset
 from mmengine.logging import MMLogger
 from mmdet.registry import TRANSFORMS, DATASETS
+
 logger = MMLogger.get_instance(name='mmengine', log_level='INFO')
+rng = random.Random(42)
 
 class Compose:
     "Compose multiple transforms sequentially"
@@ -113,12 +115,13 @@ class OpenLaneDataset(Dataset):
         for i, segment in enumerate(segments):
             segment_pth = os.path.join(self.ann_dir, segment)
             segments_files = os.listdir(segment_pth)
+            # segments_files = rng.shuffle(os.listdir(segment_pth))
             
-            count = 0
+            # count = 0
             for seg_file in tqdm(segments_files, desc=f"Loading JSONs from segment no. {i+1} [{segment}] ", unit="file", total=len(segments_files)):
                 
-                if count >= 25:
-                    break
+                # if count >= 25:
+                #     break
                 
                 file_pth = os.path.join(segment_pth, seg_file) if seg_file.endswith('.json') else 'invalid'
                 
@@ -133,7 +136,7 @@ class OpenLaneDataset(Dataset):
                     
                     data_infos.append(info_dict)
                 
-                count += 1
+                # count += 1
                     
         logger.info(f"Loaded annotations for total of {len(data_infos)} samples")
          
