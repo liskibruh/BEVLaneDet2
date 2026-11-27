@@ -1,4 +1,5 @@
 import logging
+import math
 import torch
 from torch import nn
 from ..utils.common_modules import Residual, masked_mean_height, LearnedHeightCompression, \
@@ -923,3 +924,160 @@ class BEVLaneDetVoxUpscaled(BaseDetector):
             }
             
         return data_samples
+
+@MODELS.register_module()
+class BEVLaneDetVoxUpscaledCenterness(BEVLaneDetVoxUpscaled):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        weights = self.get_radial_bev_weights(
+            height=200,
+            width=48,
+            x_min=-12.0,
+            y_min=3.0,
+            res=0.5,
+            alpha=0.5
+        )
+        
+        self.register_buffer(
+            'bev_distance_weights',
+            weights,
+            persistent=True
+        )
+    
+    def get_radial_bev_weights(self, height, width, x_min, y_min, res, alpha):
+        
+        H, W = height, width
+        x = x_min + (torch.arange(W) + 0.5) * res
+        y = y_min + (torch.arange(H) + 0.5) * res
+        
+        yy, xx = torch.meshgrid(y, x, indexing='ij')
+        
+        distance = torch.sqrt(xx.square() + yy.square())
+        
+        max_distance = math.sqrt(
+            max(abs(x_min), abs(x_min + width * res)) ** 2
+            + max(abs(y_min), abs(y_min + height * res)) ** 2
+        )
+        
+        normalized_dist = (distance/max_distance).clamp(0, 1)
+        
+        weights = 1.0 + alpha * torch.sqrt(normalized_dist)
+        
+        return weights.unsqueeze(0).unsqueeze(0)
+    
+    @staticmethod
+    def weighted_mean(loss_map, weight_map, eps=1e-6):
+        return (loss_map * weight_map).sum() / (weight_map.sum() + eps)
+    
+    def loss(self, inputs, data_samples):
+        losses = dict()
+        bev_out, fv_out = self._forward(inputs)
+        
+        pred, emb, offset_y, z = bev_out
+        pred_2d, emb_2d = fv_out
+        
+        bev_seg_gt = torch.stack([
+            sample.bev_gt.sem_seg
+            for sample in data_samples
+        ])
+        
+        bev_seg_gt = bev_seg_gt.float()
+        
+        bev_instance_gt = torch.stack([
+            sample.bev_gt.instance_seg
+            for sample in data_samples
+        ])
+        
+        bev_offset_gt = torch.stack([
+            sample.bev_gt.y_offset_map
+            for sample in data_samples
+        ])
+        
+        bev_z_gt = torch.stack([
+            sample.bev_gt.z_map
+            for sample in data_samples
+        ])
+        
+        bev_distance_weights = self.bev_distance_weights.to(device=bev_seg_gt.device, dtype=bev_seg_gt.dtype)
+        
+        valid_mask = (bev_seg_gt != 255).float()
+        positive_mask = (bev_seg_gt == 1).float()
+        
+        bev_seg_weights = 1.0 + (
+            (bev_distance_weights - 1.0) * positive_mask
+        ) * valid_mask
+        
+        bce_map = self.loss_bce_logits(
+            pred,
+            bev_seg_gt,
+            reduction_override='none'
+        )
+        
+        loss_seg_bce = self.weighted_mean(bce_map, bev_seg_weights)
+        loss_seg_iou = self.loss_soft_iou(torch.sigmoid(pred), bev_seg_gt)
+        loss_seg = loss_seg_bce + loss_seg_iou
+        # loss_seg = self.loss_bce_logits(pred, bev_seg_gt) + self.loss_soft_iou(torch.sigmoid(pred), bev_seg_gt)
+        
+        loss_emb = self.loss_push_pull(emb, bev_instance_gt)
+        
+        offset_weights = (
+            bev_seg_weights * positive_mask
+        ).squeeze(1)
+        
+        offset_map = self.loss_bce_logits_offset(
+            offset_y.squeeze(1),
+            bev_offset_gt.squeeze(1),
+            reduction_override='none'
+        )
+        
+        loss_offset = self.weighted_mean(offset_map, offset_weights).unsqueeze(0)
+        # loss_offset = self.loss_bce_logits_offset(offset_y.squeeze(1), bev_offset_gt.squeeze(1), weight=bev_seg_gt.squeeze(1)).unsqueeze(0)
+
+        z_weights = bev_distance_weights * positive_mask
+        
+        z_map = self.loss_mse(
+            z,
+            bev_z_gt,
+            reduction_override='none'
+        )
+        loss_z = self.weighted_mean(z_map, z_weights).unsqueeze(0)
+        # loss_z = self.loss_mse(bev_seg_gt * z, bev_z_gt).unsqueeze(0)
+        
+        # print("pred:", pred.shape)
+        # print("bev_seg_gt:", bev_seg_gt.shape)
+        # print("bce_map:", bce_map.shape)
+        # print("bev_seg_weights:", bev_seg_weights.shape)
+
+        # print("offset_map:", offset_map.shape)
+        # print("offset_weights:", offset_weights.shape)
+
+        # print("z_map:", z_map.shape)
+        # print("z_weights:", z_weights.shape)
+        # print("="*64)
+        
+        loss_total = (self.bev_loss_seg_weight * loss_seg + self.bev_loss_embed_weight * loss_emb).unsqueeze(0)
+        loss_offset = self.bev_loss_offset_weight * loss_offset
+        loss_z = self.bev_loss_z_weight * loss_z
+        
+        fv_seg_gt = torch.stack([
+            sample.image_gt_segment.sem_seg
+            for sample in data_samples
+        ])
+        
+        fv_instance_gt = torch.stack([
+            sample.image_gt_instance.instance_seg
+            for sample in data_samples
+        ])
+        
+        loss_seg_2d = self.loss_bce_logits(pred_2d, fv_seg_gt) + self.loss_soft_iou(torch.sigmoid(pred_2d), fv_seg_gt)
+        loss_emb_2d = self.loss_push_pull(emb_2d, fv_instance_gt)
+        loss_total_2d = self.fv_loss_seg_weight * loss_seg_2d + self.fv_loss_embed_weight * loss_emb_2d
+        loss_total_2d = loss_total_2d.unsqueeze(0)
+        
+        losses['loss_total_bev'] = loss_total
+        losses['loss_total_fv'] = loss_total_2d
+        losses['loss_offset_bev'] = loss_offset
+        losses['loss_z_bev'] = loss_z
+        
+        return losses

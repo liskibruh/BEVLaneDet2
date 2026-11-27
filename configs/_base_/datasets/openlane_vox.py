@@ -4,8 +4,8 @@ with read_base():
     from ..commons import *
 
 data_root = "./data/OpenLane/"
-train_ann_path = "lane3d_300/training/"
-val_ann_path = "lane3d_300/validation/"
+train_ann_path = "random_subset/training/"
+val_ann_path = "random_subset/validation/"
 
 dataset = "OpenLaneDataset"
 

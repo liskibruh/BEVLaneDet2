@@ -98,7 +98,7 @@ model = dict(
     bev_loss_z_weight=30,
     fv_loss_seg_weight=3,
     fv_loss_embed_weight=0.5,
-    bb_out_ch=512,      # depends on backbone's (resenet) "out_indices" parameter
+    bb_out_ch=512,      # depends on backbone's (resnet) "out_indices" parameter
                         # [64, 128, 256, 512] for out_indices (0, 1, 2, 3)
     # bev_feat_ch=int(64*((2*z_range)/meter_per_pixel)),
     bev_feat_ch=128,

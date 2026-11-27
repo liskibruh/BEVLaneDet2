@@ -1,8 +1,9 @@
 import argparse
 import torch
-import bevlanedet
+# import bevlanedet
 from mmengine.config import Config
 from mmengine.runner import Runner
+from mmengine.utils import import_modules_from_strings
 from mmengine.registry import init_default_scope
 
 
@@ -29,6 +30,9 @@ def main():
 
     # Load config
     cfg = Config.fromfile(args.config)
+    
+    if cfg.get('custom_imports', None):
+        import_modules_from_strings(**cfg['custom_imports'])
 
     # Override work directory from command line
     if args.work_dir is not None:
